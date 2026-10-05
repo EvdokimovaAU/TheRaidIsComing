@@ -1,0 +1,13 @@
+.vs/
+Binaries/
+DerivedDataCache/
+Intermediate/
+Saved/
+
+*.sln
+*.slnx
+*.VC.db
+*.VC.VC.opendb
+
+.vsconfig
+.idea/
