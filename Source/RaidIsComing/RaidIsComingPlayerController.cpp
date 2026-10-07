@@ -1,138 +1,307 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "RaidIsComingPlayerController.h"
-#include "GameFramework/Pawn.h"
+
+#include "Construction/RICBuilding.h"
+#include "Construction/RICConstructionComponent.h"
+
 #include "Blueprint/AIBlueprintHelperLibrary.h"
-#include "NiagaraSystem.h"
-#include "NiagaraFunctionLibrary.h"
-#include "RaidIsComingCharacter.h"
+#include "Components/InputComponent.h"
+#include "Engine/LocalPlayer.h"
 #include "Engine/World.h"
 #include "EnhancedInputComponent.h"
-#include "Navigation/PathFollowingComponent.h"
-#include "InputActionValue.h"
 #include "EnhancedInputSubsystems.h"
-#include "Engine/LocalPlayer.h"
+#include "GameFramework/Pawn.h"
+#include "InputCoreTypes.h"
+#include "Navigation/PathFollowingComponent.h"
+#include "NiagaraFunctionLibrary.h"
+#include "NiagaraSystem.h"
 #include "RaidIsComing.h"
 
 ARaidIsComingPlayerController::ARaidIsComingPlayerController()
 {
-	bIsTouch = false;
-	bMoveToMouseCursor = false;
+    bIsTouch = false;
+    bMoveToMouseCursor = false;
 
-	// create the path following comp
-	PathFollowingComponent = CreateDefaultSubobject<UPathFollowingComponent>(TEXT("Path Following Component"));
+    PathFollowingComponent =
+        CreateDefaultSubobject<UPathFollowingComponent>(
+            TEXT("Path Following Component"));
 
-	// configure the controller
-	bShowMouseCursor = true;
-	DefaultMouseCursor = EMouseCursor::Default;
-	CachedDestination = FVector::ZeroVector;
-	FollowTime = 0.f;
+    ConstructionComponent =
+        CreateDefaultSubobject<URICConstructionComponent>(
+            TEXT("ConstructionComponent"));
+
+    bShowMouseCursor = true;
+    DefaultMouseCursor = EMouseCursor::Default;
+
+    CachedDestination = FVector::ZeroVector;
+    FollowTime = 0.0f;
 }
 
 void ARaidIsComingPlayerController::SetupInputComponent()
 {
-	// set up gameplay key bindings
-	Super::SetupInputComponent();
+    Super::SetupInputComponent();
 
-	// Only set up input on local player controllers
-	if (IsLocalPlayerController())
-	{
-		// Add Input Mapping Context
-		if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(GetLocalPlayer()))
-		{
-			Subsystem->AddMappingContext(DefaultMappingContext, 0);
-		}
+    if (!IsLocalPlayerController() || !InputComponent)
+    {
+        return;
+    }
 
-		// Set up action bindings
-		if (UEnhancedInputComponent* EnhancedInputComponent = Cast<UEnhancedInputComponent>(InputComponent))
-		{
-			// Setup mouse input events
-			EnhancedInputComponent->BindAction(SetDestinationClickAction, ETriggerEvent::Started, this, &ARaidIsComingPlayerController::OnInputStarted);
-			EnhancedInputComponent->BindAction(SetDestinationClickAction, ETriggerEvent::Triggered, this, &ARaidIsComingPlayerController::OnSetDestinationTriggered);
-			EnhancedInputComponent->BindAction(SetDestinationClickAction, ETriggerEvent::Completed, this, &ARaidIsComingPlayerController::OnSetDestinationReleased);
-			EnhancedInputComponent->BindAction(SetDestinationClickAction, ETriggerEvent::Canceled, this, &ARaidIsComingPlayerController::OnSetDestinationReleased);
+    // Выбор казармы.
+    InputComponent->BindKey(
+        EKeys::B,
+        IE_Pressed,
+        this,
+        &ARaidIsComingPlayerController::StartBarracksPreview
+    );
 
-			// Setup touch input events
-			EnhancedInputComponent->BindAction(SetDestinationTouchAction, ETriggerEvent::Started, this, &ARaidIsComingPlayerController::OnInputStarted);
-			EnhancedInputComponent->BindAction(SetDestinationTouchAction, ETriggerEvent::Triggered, this, &ARaidIsComingPlayerController::OnTouchTriggered);
-			EnhancedInputComponent->BindAction(SetDestinationTouchAction, ETriggerEvent::Completed, this, &ARaidIsComingPlayerController::OnTouchReleased);
-			EnhancedInputComponent->BindAction(SetDestinationTouchAction, ETriggerEvent::Canceled, this, &ARaidIsComingPlayerController::OnTouchReleased);
-		}
-		else
-		{
-			UE_LOG(LogRaidIsComing, Error, TEXT("'%s' Failed to find an Enhanced Input Component! This template is built to use the Enhanced Input system. If you intend to use the legacy system, then you will need to update this C++ file."), *GetNameSafe(this));
-		}
-	}
+    // Отмена строительства.
+    InputComponent->BindKey(
+        EKeys::RightMouseButton,
+        IE_Pressed,
+        this,
+        &ARaidIsComingPlayerController::CancelBuildingPreview
+    );
+
+    // Контекст ввода для обычного движения.
+    if (UEnhancedInputLocalPlayerSubsystem* Subsystem =
+        ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(
+            GetLocalPlayer()))
+    {
+        if (DefaultMappingContext)
+        {
+            Subsystem->AddMappingContext(DefaultMappingContext, 0);
+        }
+        else
+        {
+            UE_LOG(
+                LogRaidIsComing,
+                Warning,
+                TEXT("DefaultMappingContext is not assigned.")
+            );
+        }
+    }
+
+    UEnhancedInputComponent* EnhancedInputComponent =
+        Cast<UEnhancedInputComponent>(InputComponent);
+
+    if (!EnhancedInputComponent)
+    {
+        UE_LOG(
+            LogRaidIsComing,
+            Error,
+            TEXT("'%s': Enhanced Input Component was not found."),
+            *GetNameSafe(this)
+        );
+
+        return;
+    }
+
+    // Управление мышью.
+    if (SetDestinationClickAction)
+    {
+        EnhancedInputComponent->BindAction(
+            SetDestinationClickAction,
+            ETriggerEvent::Started,
+            this,
+            &ARaidIsComingPlayerController::OnInputStarted
+        );
+
+        EnhancedInputComponent->BindAction(
+            SetDestinationClickAction,
+            ETriggerEvent::Triggered,
+            this,
+            &ARaidIsComingPlayerController::OnSetDestinationTriggered
+        );
+
+        EnhancedInputComponent->BindAction(
+            SetDestinationClickAction,
+            ETriggerEvent::Completed,
+            this,
+            &ARaidIsComingPlayerController::OnSetDestinationReleased
+        );
+
+        EnhancedInputComponent->BindAction(
+            SetDestinationClickAction,
+            ETriggerEvent::Canceled,
+            this,
+            &ARaidIsComingPlayerController::OnSetDestinationReleased
+        );
+    }
+    else
+    {
+        UE_LOG(
+            LogRaidIsComing,
+            Warning,
+            TEXT("SetDestinationClickAction is not assigned.")
+        );
+    }
+
+    // Сенсорное управление.
+    if (SetDestinationTouchAction)
+    {
+        EnhancedInputComponent->BindAction(
+            SetDestinationTouchAction,
+            ETriggerEvent::Started,
+            this,
+            &ARaidIsComingPlayerController::OnInputStarted
+        );
+
+        EnhancedInputComponent->BindAction(
+            SetDestinationTouchAction,
+            ETriggerEvent::Triggered,
+            this,
+            &ARaidIsComingPlayerController::OnTouchTriggered
+        );
+
+        EnhancedInputComponent->BindAction(
+            SetDestinationTouchAction,
+            ETriggerEvent::Completed,
+            this,
+            &ARaidIsComingPlayerController::OnTouchReleased
+        );
+
+        EnhancedInputComponent->BindAction(
+            SetDestinationTouchAction,
+            ETriggerEvent::Canceled,
+            this,
+            &ARaidIsComingPlayerController::OnTouchReleased
+        );
+    }
+}
+
+void ARaidIsComingPlayerController::StartBarracksPreview()
+{
+    if (ConstructionComponent->StartPreview(BarracksClass))
+    {
+        StopMovement();
+
+        FollowTime = 0.0f;
+        bSuppressDestinationUntilRelease = true;
+    }
+}
+
+void ARaidIsComingPlayerController::CancelBuildingPreview()
+{
+    ConstructionComponent->CancelPreview();
 }
 
 void ARaidIsComingPlayerController::OnInputStarted()
 {
-	StopMovement();
+    StopMovement();
+    FollowTime = 0.0f;
 
-	// Update the move destination to wherever the cursor is pointing at
-	UpdateCachedDestination();
+    bSuppressDestinationUntilRelease =
+        ConstructionComponent->IsBuildingMode();
+
+    if (bSuppressDestinationUntilRelease)
+    {
+        return;
+    }
+
+    UpdateCachedDestination();
 }
 
 void ARaidIsComingPlayerController::OnSetDestinationTriggered()
 {
-	// We flag that the input is being pressed
-	FollowTime += GetWorld()->GetDeltaSeconds();
-	
-	// Update the move destination to wherever the cursor is pointing at
-	UpdateCachedDestination();
-	
-	// Move towards mouse pointer or touch
-	APawn* ControlledPawn = GetPawn();
-	if (ControlledPawn != nullptr)
-	{
-		FVector WorldDirection = (CachedDestination - ControlledPawn->GetActorLocation()).GetSafeNormal();
-		ControlledPawn->AddMovementInput(WorldDirection, 1.0, false);
-	}
+    // Во время превью клик не управляет персонажем.
+    if (ConstructionComponent->IsBuildingMode()
+        || bSuppressDestinationUntilRelease)
+    {
+        return;
+    }
+
+    FollowTime += GetWorld()->GetDeltaSeconds();
+
+    UpdateCachedDestination();
+
+    if (APawn* ControlledPawn = GetPawn())
+    {
+        const FVector WorldDirection =
+            (CachedDestination - ControlledPawn->GetActorLocation())
+            .GetSafeNormal();
+
+        ControlledPawn->AddMovementInput(
+            WorldDirection,
+            1.0f,
+            false
+        );
+    }
 }
 
 void ARaidIsComingPlayerController::OnSetDestinationReleased()
 {
-	// If it was a short press
-	if (FollowTime <= ShortPressThreshold)
-	{
-		// We move there and spawn some particles
-		UAIBlueprintHelperLibrary::SimpleMoveToLocation(this, CachedDestination);
-		UNiagaraFunctionLibrary::SpawnSystemAtLocation(this, FXCursor, CachedDestination, FRotator::ZeroRotator, FVector(1.f, 1.f, 1.f), true, true, ENCPoolMethod::None, true);
-	}
+    if (ConstructionComponent->IsBuildingMode()
+        || bSuppressDestinationUntilRelease)
+    {
+        FollowTime = 0.0f;
+        bSuppressDestinationUntilRelease = false;
+        return;
+    }
 
-	FollowTime = 0.f;
+    if (FollowTime <= ShortPressThreshold)
+    {
+        UAIBlueprintHelperLibrary::SimpleMoveToLocation(
+            this,
+            CachedDestination
+        );
+
+        if (FXCursor)
+        {
+            UNiagaraFunctionLibrary::SpawnSystemAtLocation(
+                this,
+                FXCursor,
+                CachedDestination,
+                FRotator::ZeroRotator,
+                FVector(1.0f),
+                true,
+                true,
+                ENCPoolMethod::None,
+                true
+            );
+        }
+    }
+
+    FollowTime = 0.0f;
 }
 
-// Triggered every frame when the input is held down
 void ARaidIsComingPlayerController::OnTouchTriggered()
 {
-	bIsTouch = true;
-	OnSetDestinationTriggered();
+    bIsTouch = true;
+    OnSetDestinationTriggered();
 }
 
 void ARaidIsComingPlayerController::OnTouchReleased()
 {
-	bIsTouch = false;
-	OnSetDestinationReleased();
+    bIsTouch = false;
+    OnSetDestinationReleased();
 }
 
 void ARaidIsComingPlayerController::UpdateCachedDestination()
 {
-	// We look for the location in the world where the player has pressed the input
-	FHitResult Hit;
-	bool bHitSuccessful = false;
-	if (bIsTouch)
-	{
-		bHitSuccessful = GetHitResultUnderFinger(ETouchIndex::Touch1, ECollisionChannel::ECC_Visibility, true, Hit);
-	}
-	else
-	{
-		bHitSuccessful = GetHitResultUnderCursor(ECollisionChannel::ECC_Visibility, true, Hit);
-	}
+    FHitResult Hit;
+    bool bHitSuccessful = false;
 
-	// If we hit a surface, cache the location
-	if (bHitSuccessful)
-	{
-		CachedDestination = Hit.Location;
-	}
+    if (bIsTouch)
+    {
+        bHitSuccessful = GetHitResultUnderFinger(
+            ETouchIndex::Touch1,
+            ECC_Visibility,
+            true,
+            Hit
+        );
+    }
+    else
+    {
+        bHitSuccessful = GetHitResultUnderCursor(
+            ECC_Visibility,
+            true,
+            Hit
+        );
+    }
+
+    if (bHitSuccessful)
+    {
+        CachedDestination = Hit.Location;
+    }
 }

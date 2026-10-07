@@ -3,7 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-//#include "Templates/SubclassOf.h"
+#include "Templates/SubclassOf.h"
 #include "GameFramework/PlayerController.h"
 #include "RaidIsComingPlayerController.generated.h"
 
@@ -11,75 +11,62 @@ class UNiagaraSystem;
 class UInputMappingContext;
 class UInputAction;
 class UPathFollowingComponent;
+class ARICBuilding;
+class URICConstructionComponent;
 
 DECLARE_LOG_CATEGORY_EXTERN(LogTemplateCharacter, Log, All);
 
-/**
- *  Player controller for a top-down perspective game.
- *  Implements point and click based controls
- */
 UCLASS(abstract)
 class ARaidIsComingPlayerController : public APlayerController
 {
-	GENERATED_BODY()
-
-protected:
-
-	/** Component used for moving along a NavMesh path. */
-	UPROPERTY(VisibleDefaultsOnly, Category = AI)
-	TObjectPtr<UPathFollowingComponent> PathFollowingComponent;
-
-	/** Time Threshold to know if it was a short press */
-	UPROPERTY(EditAnywhere, Category="Input")
-	float ShortPressThreshold;
-
-	/** FX Class that we will spawn when clicking */
-	UPROPERTY(EditAnywhere, Category="Input")
-	TObjectPtr<UNiagaraSystem> FXCursor;
-
-	/** MappingContext */
-	UPROPERTY(EditAnywhere, Category="Input")
-	TObjectPtr<UInputMappingContext> DefaultMappingContext;
-	
-	/** Jump Input Action */
-	UPROPERTY(EditAnywhere, Category="Input")
-	TObjectPtr<UInputAction> SetDestinationClickAction;
-
-	/** Jump Input Action */
-	UPROPERTY(EditAnywhere, Category="Input")
-	TObjectPtr<UInputAction> SetDestinationTouchAction;
-
-	/** True if the controlled character should navigate to the mouse cursor. */
-	uint32 bMoveToMouseCursor : 1;
-
-	/** Set to true if we're using touch input */
-	uint32 bIsTouch : 1;
-
-	/** Saved location of the character movement destination */
-	FVector CachedDestination;
-
-	/** Time that the click input has been pressed */
-	float FollowTime = 0.0f;
+    GENERATED_BODY()
 
 public:
-
-	/** Constructor */
-	ARaidIsComingPlayerController();
+    ARaidIsComingPlayerController();
 
 protected:
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Construction")
+    TObjectPtr<URICConstructionComponent> ConstructionComponent;
 
-	/** Initialize input bindings */
-	virtual void SetupInputComponent() override;
-	
-	/** Input handlers */
-	void OnInputStarted();
-	void OnSetDestinationTriggered();
-	void OnSetDestinationReleased();
-	void OnTouchTriggered();
-	void OnTouchReleased();
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Construction")
+    TSubclassOf<ARICBuilding> BarracksClass;
 
-	/** Helper function to get the move destination */
-	void UpdateCachedDestination();
+    UPROPERTY(VisibleDefaultsOnly, Category = "AI")
+    TObjectPtr<UPathFollowingComponent> PathFollowingComponent;
+
+    UPROPERTY(EditAnywhere, Category = "Input")
+    float ShortPressThreshold = 0.2f;
+
+    UPROPERTY(EditAnywhere, Category = "Input")
+    TObjectPtr<UNiagaraSystem> FXCursor;
+
+    UPROPERTY(EditAnywhere, Category = "Input")
+    TObjectPtr<UInputMappingContext> DefaultMappingContext;
+
+    UPROPERTY(EditAnywhere, Category = "Input")
+    TObjectPtr<UInputAction> SetDestinationClickAction;
+
+    UPROPERTY(EditAnywhere, Category = "Input")
+    TObjectPtr<UInputAction> SetDestinationTouchAction;
+
+    uint32 bMoveToMouseCursor : 1;
+    uint32 bIsTouch : 1;
+
+    FVector CachedDestination;
+    float FollowTime = 0.0f;
+
+    bool bSuppressDestinationUntilRelease = false;
+
+    virtual void SetupInputComponent() override;
+
+    void StartBarracksPreview();
+    void CancelBuildingPreview();
+
+    void OnInputStarted();
+    void OnSetDestinationTriggered();
+    void OnSetDestinationReleased();
+    void OnTouchTriggered();
+    void OnTouchReleased();
+
+    void UpdateCachedDestination();
 };
-
-
