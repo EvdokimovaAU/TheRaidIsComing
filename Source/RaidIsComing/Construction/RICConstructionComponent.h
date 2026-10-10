@@ -10,8 +10,11 @@ class ARICBuilding;
 class AStaticMeshActor;
 class UMaterialInterface;
 
-UCLASS(ClassGroup = (Construction), meta = (BlueprintSpawnableComponent))
-class RAIDISCOMING_API URICConstructionComponent : public UActorComponent
+UCLASS(
+    ClassGroup = (Construction),
+    meta = (BlueprintSpawnableComponent))
+    class RAIDISCOMING_API URICConstructionComponent
+    : public UActorComponent
 {
     GENERATED_BODY()
 
@@ -27,6 +30,9 @@ public:
     UFUNCTION(BlueprintPure, Category = "Construction")
     bool IsBuildingMode() const;
 
+    UFUNCTION(BlueprintPure, Category = "Construction")
+    bool HasValidZonePosition() const;
+
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Construction")
     TObjectPtr<UMaterialInterface> PreviewMaterial;
 
@@ -34,12 +40,10 @@ protected:
     virtual void TickComponent(
         float DeltaTime,
         ELevelTick TickType,
-        FActorComponentTickFunction* ThisTickFunction
-    ) override;
+        FActorComponentTickFunction* ThisTickFunction) override;
 
     virtual void EndPlay(
-        const EEndPlayReason::Type EndPlayReason
-    ) override;
+        const EEndPlayReason::Type EndPlayReason) override;
 
 private:
     UPROPERTY(Transient)
@@ -47,8 +51,12 @@ private:
 
     ERICBuildingType SelectedType = ERICBuildingType::Barracks;
 
-    // Расстояние от нижней точки меша до его pivot.
-    float PreviewHeightOffset = 0.0f;
+    FVector2D FootprintHalfSize = FVector2D::ZeroVector;
+    FVector PreviewCenterOffset = FVector::ZeroVector;
+
+    double PreviewHeightOffset = 0.0;
+
+    bool bHasValidZonePosition = false;
 
     void UpdatePreviewPosition();
     void UpdateZoneHighlights(bool bEnabled);
