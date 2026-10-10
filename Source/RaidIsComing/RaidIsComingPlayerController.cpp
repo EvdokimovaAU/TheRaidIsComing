@@ -55,6 +55,18 @@ void ARaidIsComingPlayerController::SetupInputComponent()
         &ARaidIsComingPlayerController::StartBarracksPreview
     );
 
+    InputComponent->BindKey(
+        EKeys::One,
+        IE_Pressed,
+        this,
+        &ARaidIsComingPlayerController::StartArcherTowerPreview);
+
+    InputComponent->BindKey(
+        EKeys::Two,
+        IE_Pressed,
+        this,
+        &ARaidIsComingPlayerController::StartMageTowerPreview);
+
     // Отмена строительства.
     InputComponent->BindKey(
         EKeys::RightMouseButton,
@@ -303,5 +315,46 @@ void ARaidIsComingPlayerController::UpdateCachedDestination()
     if (bHitSuccessful)
     {
         CachedDestination = Hit.Location;
+    }
+}
+void ARaidIsComingPlayerController::StartArcherTowerPreview()
+{
+    StartTowerPreview(ArcherTowerClass);
+}
+
+void ARaidIsComingPlayerController::StartMageTowerPreview()
+{
+    StartTowerPreview(MageTowerClass);
+}
+
+void ARaidIsComingPlayerController::StartTowerPreview(
+    TSubclassOf<ARICBuilding> BuildingClass)
+{
+    if (!ConstructionComponent)
+    {
+        UE_LOG(
+            LogTemp,
+            Warning,
+            TEXT("Cannot select tower: ConstructionComponent is missing."));
+
+        return;
+    }
+
+    if (!BuildingClass)
+    {
+        UE_LOG(
+            LogTemp,
+            Warning,
+            TEXT("Cannot select tower: assign the tower class in BP_RICPlayerController."));
+
+        return;
+    }
+
+    if (ConstructionComponent->StartPreview(BuildingClass))
+    {
+        StopMovement();
+
+        FollowTime = 0.0f;
+        bSuppressDestinationUntilRelease = true;
     }
 }

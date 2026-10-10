@@ -31,6 +31,12 @@ protected:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Construction")
     TSubclassOf<ARICBuilding> BarracksClass;
 
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Construction")
+    TSubclassOf<ARICBuilding> ArcherTowerClass;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Construction")
+    TSubclassOf<ARICBuilding> MageTowerClass;
+
     UPROPERTY(VisibleDefaultsOnly, Category = "AI")
     TObjectPtr<UPathFollowingComponent> PathFollowingComponent;
 
@@ -60,6 +66,10 @@ protected:
     virtual void SetupInputComponent() override;
 
     void StartBarracksPreview();
+    void StartArcherTowerPreview();
+    void StartMageTowerPreview();
+
+    void StartTowerPreview(TSubclassOf<ARICBuilding> BuildingClass);
     void CancelBuildingPreview();
 
     void OnInputStarted();
