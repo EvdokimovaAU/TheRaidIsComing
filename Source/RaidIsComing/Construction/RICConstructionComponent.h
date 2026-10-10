@@ -27,6 +27,9 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Construction")
     void CancelPreview();
 
+    UFUNCTION(BlueprintCallable, Category = "Construction")
+    bool TryPlacePreview();
+
     UFUNCTION(BlueprintPure, Category = "Construction")
     bool IsBuildingMode() const;
 
@@ -49,6 +52,9 @@ private:
     UPROPERTY(Transient)
     TObjectPtr<AStaticMeshActor> PreviewActor;
 
+    UPROPERTY(Transient)
+    TSubclassOf<ARICBuilding> SelectedBuildingClass;
+
     ERICBuildingType SelectedType = ERICBuildingType::Barracks;
 
     FVector2D FootprintHalfSize = FVector2D::ZeroVector;
@@ -60,4 +66,7 @@ private:
 
     void UpdatePreviewPosition();
     void UpdateZoneHighlights(bool bEnabled);
+    bool HasBuildingOverlap(
+        const FBoxSphereBounds& CandidateBounds,
+        const ARICBuilding* IgnoredBuilding = nullptr) const;
 };

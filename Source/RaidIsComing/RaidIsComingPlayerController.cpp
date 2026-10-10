@@ -201,13 +201,16 @@ void ARaidIsComingPlayerController::CancelBuildingPreview()
 void ARaidIsComingPlayerController::OnInputStarted()
 {
     StopMovement();
+
     FollowTime = 0.0f;
 
     bSuppressDestinationUntilRelease =
-        ConstructionComponent->IsBuildingMode();
+        ConstructionComponent
+        && ConstructionComponent->IsBuildingMode();
 
     if (bSuppressDestinationUntilRelease)
     {
+        ConstructionComponent->TryPlacePreview();
         return;
     }
 

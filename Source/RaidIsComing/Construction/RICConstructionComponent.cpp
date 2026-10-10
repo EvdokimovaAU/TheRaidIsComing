@@ -206,6 +206,7 @@ bool URICConstructionComponent::StartPreview(
         Bounds.BoxExtent.Z - PreviewCenterOffset.Z;
 
     SelectedType = Defaults->BuildingType;
+    SelectedBuildingClass = BuildingClass;
 
     for (TActorIterator<ARICBuildZone> It(World); It; ++It)
     {
@@ -248,6 +249,7 @@ void URICConstructionComponent::CancelPreview()
     }
 
     PreviewActor = nullptr;
+    SelectedBuildingClass = nullptr;
 
     UpdateZoneHighlights(false);
 }
@@ -425,4 +427,255 @@ void URICConstructionComponent::EndPlay(
     CancelPreview();
 
     Super::EndPlay(EndPlayReason);
+}
+bool URICConstructionComponent::HasBuildingOverlap(
+    const FBoxSphereBounds& CandidateBounds,
+    const ARICBuilding* IgnoredBuilding) const
+{
+    UWorld* World = GetWorld();
+
+    if (!World)
+    {
+        return true;
+    }
+
+    // Небольшой допуск для погрешности вычислений.
+    constexpr double ContactTolerance = 0.001;
+
+    for (TActorIterator<ARICBuilding> It(World); It; ++It)
+    {
+        ARICBuilding* Building = *It;
+
+        if (!IsValid(Building)
+            || Building == IgnoredBuilding
+            || Building->IsActorBeingDestroyed())
+        {
+            continue;
+        }
+
+        UStaticMeshComponent* OtherMesh =
+            Building->BuildingMesh.Get();
+
+        if (!OtherMesh || !OtherMesh->GetStaticMesh())
+        {
+            continue;
+        }
+
+        const FBoxSphereBounds OtherBounds =
+            OtherMesh->CalcBounds(
+                OtherMesh->GetComponentTransform());
+
+        const double DistanceX = FMath::Abs(
+            CandidateBounds.Origin.X - OtherBounds.Origin.X);
+
+        const double DistanceY = FMath::Abs(
+            CandidateBounds.Origin.Y - OtherBounds.Origin.Y);
+
+        const double CombinedHalfX =
+            CandidateBounds.BoxExtent.X
+            + OtherBounds.BoxExtent.X;
+
+        const double CombinedHalfY =
+            CandidateBounds.BoxExtent.Y
+            + OtherBounds.BoxExtent.Y;
+
+        // Пересечение должно быть одновременно по обеим осям.
+        // Равенство границ считается касанием и разрешено.
+        const bool bOverlapX =
+            DistanceX < CombinedHalfX - ContactTolerance;
+
+        const bool bOverlapY =
+            DistanceY < CombinedHalfY - ContactTolerance;
+
+        if (bOverlapX && bOverlapY)
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool URICConstructionComponent::TryPlacePreview()
+{
+    if (!IsBuildingMode() || !SelectedBuildingClass)
+    {
+        return false;
+    }
+
+    // Пересчитываем позицию непосредственно перед установкой.
+    UpdatePreviewPosition();
+
+    if (!bHasValidZonePosition)
+    {
+        UE_LOG(
+            LogTemp,
+            Warning,
+            TEXT("Construction rejected: no valid zone position."));
+
+        return false;
+    }
+
+    UWorld* World = GetWorld();
+
+    UStaticMeshComponent* PreviewMesh =
+        PreviewActor->GetStaticMeshComponent();
+
+    if (!World || !PreviewMesh || !PreviewMesh->GetStaticMesh())
+    {
+        return false;
+    }
+
+    const FBoxSphereBounds PreviewBounds =
+        PreviewMesh->CalcBounds(
+            PreviewMesh->GetComponentTransform());
+
+    if (HasBuildingOverlap(PreviewBounds))
+    {
+        UE_LOG(
+            LogTemp,
+            Warning,
+            TEXT("Construction rejected: overlaps another building."));
+
+        return false;
+    }
+
+    const FTransform PlacementTransform =
+        PreviewActor->GetActorTransform();
+
+    FActorSpawnParameters SpawnParams;
+
+    SpawnParams.Owner = GetOwner();
+
+    // Позицию проверяет наша логика строительства.
+    // Unreal не должен автоматически сдвигать здание.
+    SpawnParams.SpawnCollisionHandlingOverride =
+        ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+    ARICBuilding* NewBuilding = World->SpawnActor<ARICBuilding>(
+        SelectedBuildingClass.Get(),
+        PlacementTransform.GetLocation(),
+        PlacementTransform.Rotator(),
+        SpawnParams);
+
+    if (!IsValid(NewBuilding)
+        || NewBuilding->IsActorBeingDestroyed())
+    {
+        UE_LOG(
+            LogTemp,
+            Warning,
+            TEXT("Construction rejected: could not spawn building."));
+
+        return false;
+    }
+
+    // Устанавливаем тот же масштаб и позицию, что были у превью.
+    NewBuilding->SetActorTransform(PlacementTransform);
+
+    UStaticMeshComponent* BuildingMesh =
+        NewBuilding->BuildingMesh.Get();
+
+    if (!BuildingMesh || !BuildingMesh->GetStaticMesh())
+    {
+        NewBuilding->Destroy();
+
+        UE_LOG(
+            LogTemp,
+            Warning,
+            TEXT("Construction rejected: spawned building has no mesh."));
+
+        return false;
+    }
+
+    // Повторно проверяем реальный объект:
+    // Blueprint мог изменить его размеры при создании.
+    const FBoxSphereBounds ActualBounds =
+        BuildingMesh->CalcBounds(
+            BuildingMesh->GetComponentTransform());
+
+    if (ActualBounds.Origin.ContainsNaN()
+        || ActualBounds.BoxExtent.ContainsNaN()
+        || ActualBounds.BoxExtent.X <= 0.0
+        || ActualBounds.BoxExtent.Y <= 0.0)
+    {
+        NewBuilding->Destroy();
+
+        UE_LOG(
+            LogTemp,
+            Warning,
+            TEXT("Construction rejected: invalid building dimensions."));
+
+        return false;
+    }
+
+    const FVector2D ActualHalfSize(
+        ActualBounds.BoxExtent.X,
+        ActualBounds.BoxExtent.Y);
+
+    bool bInsideAllowedZone = false;
+
+    for (TActorIterator<ARICBuildZone> It(World); It; ++It)
+    {
+        ARICBuildZone* Zone = *It;
+
+        if (!Zone->IsBuildingAllowed(NewBuilding->BuildingType))
+        {
+            continue;
+        }
+
+        const double BuildingBottom =
+            ActualBounds.Origin.Z - ActualBounds.BoxExtent.Z;
+
+        if (FMath::Abs(
+            BuildingBottom - Zone->GetActorLocation().Z) > 0.01)
+        {
+            continue;
+        }
+
+        FVector NearestCenter;
+
+        if (!FindPositionInZone(
+            *Zone,
+            ActualHalfSize,
+            ActualBounds.Origin,
+            NearestCenter))
+        {
+            continue;
+        }
+
+        const double DX =
+            NearestCenter.X - ActualBounds.Origin.X;
+
+        const double DY =
+            NearestCenter.Y - ActualBounds.Origin.Y;
+
+        if (DX * DX + DY * DY <= 0.0001)
+        {
+            bInsideAllowedZone = true;
+            break;
+        }
+    }
+
+    if (!bInsideAllowedZone
+        || HasBuildingOverlap(ActualBounds, NewBuilding))
+    {
+        NewBuilding->Destroy();
+
+        UE_LOG(
+            LogTemp,
+            Warning,
+            TEXT("Construction rejected: spawned building does not fit."));
+
+        return false;
+    }
+
+    UE_LOG(
+        LogTemp,
+        Log,
+        TEXT("Building placed: %s"),
+        *NewBuilding->GetName());
+
+    CancelPreview();
+
+    return true;
 }
