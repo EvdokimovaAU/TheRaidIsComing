@@ -3,6 +3,7 @@
 #include "RICBuilding.h"
 #include "RICBuildZone.h"
 #include "RICPlacementMath.h"
+#include "RICMoneyComponent.h"
 
 #include "Components/StaticMeshComponent.h"
 #include "Engine/StaticMeshActor.h"
@@ -503,7 +504,7 @@ bool URICConstructionComponent::TryPlacePreview()
         return false;
     }
 
-    // Пересчитываем позицию непосредственно перед установкой.
+    
     UpdatePreviewPosition();
 
     if (!bHasValidZonePosition)
@@ -512,6 +513,38 @@ bool URICConstructionComponent::TryPlacePreview()
             LogTemp,
             Warning,
             TEXT("Construction rejected: no valid zone position."));
+
+        return false;
+    }
+    const ARICBuilding* BuildingDefaults =
+        SelectedBuildingClass.GetDefaultObject();
+
+    URICMoneyComponent* Money = GetOwner()
+        ? GetOwner()->FindComponentByClass<URICMoneyComponent>()
+        : nullptr;
+
+    if (!BuildingDefaults || !Money)
+    {
+        UE_LOG(
+            LogTemp,
+            Warning,
+            TEXT("Construction rejected: missing building defaults or money component.")
+        );
+
+        return false;
+    }
+
+    const int32 Cost = BuildingDefaults->ConstructionCost;
+
+    if (!Money->CanAfford(Cost))
+    {
+        UE_LOG(
+            LogTemp,
+            Warning,
+            TEXT("Construction rejected: cost %d, balance %d."),
+            Cost,
+            Money->CurrentMoney
+        );
 
         return false;
     }
@@ -668,7 +701,18 @@ bool URICConstructionComponent::TryPlacePreview()
 
         return false;
     }
+    if (!Money->TrySpend(Cost))
+    {
+        NewBuilding->Destroy();
 
+        UE_LOG(
+            LogTemp,
+            Warning,
+            TEXT("Construction rejected: payment failed.")
+        );
+
+        return false;
+    }
     UE_LOG(
         LogTemp,
         Log,

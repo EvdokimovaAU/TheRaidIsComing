@@ -4,6 +4,7 @@
 
 #include "Construction/RICBuilding.h"
 #include "Construction/RICConstructionComponent.h"
+#include "Construction/RICMoneyComponent.h"
 
 #include "Blueprint/AIBlueprintHelperLibrary.h"
 #include "Components/InputComponent.h"
@@ -26,6 +27,10 @@ ARaidIsComingPlayerController::ARaidIsComingPlayerController()
     PathFollowingComponent =
         CreateDefaultSubobject<UPathFollowingComponent>(
             TEXT("Path Following Component"));
+
+    MoneyComponent = CreateDefaultSubobject<URICMoneyComponent>(
+        TEXT("MoneyComponent")
+    );
 
     ConstructionComponent =
         CreateDefaultSubobject<URICConstructionComponent>(

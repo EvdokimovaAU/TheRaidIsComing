@@ -6,6 +6,7 @@
 #include "Templates/SubclassOf.h"
 #include "GameFramework/PlayerController.h"
 #include "RaidIsComingPlayerController.generated.h"
+class URICMoneyComponent;
 
 class UNiagaraSystem;
 class UInputMappingContext;
@@ -27,6 +28,9 @@ public:
 protected:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Construction")
     TObjectPtr<URICConstructionComponent> ConstructionComponent;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Money")
+    TObjectPtr<URICMoneyComponent> MoneyComponent;
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Construction")
     TSubclassOf<ARICBuilding> BarracksClass;
