@@ -297,9 +297,10 @@ bool ARICBuildZone::IsBuildingAllowed(ERICBuildingType Type) const
     case ERICBuildingType::ArcherTower:
         return bAllowArcherTowers;
 
-    case ERICBuildingType::Barrier:
-        return false;
+    case ERICBuildingType::MageTower:
+        return bAllowMageTowers;
 
+    case ERICBuildingType::Barrier:
     default:
         return false;
     }

@@ -106,6 +106,8 @@ public:
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Build Zone")
     bool bAllowArcherTowers = true;
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Build Zone")
+    bool bAllowMageTowers = true;
 
     UFUNCTION(BlueprintCallable, Category = "Build Zone")
     void SetHighlighted(bool bEnabled);

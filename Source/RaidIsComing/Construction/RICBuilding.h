@@ -29,6 +29,10 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Building")
     ERICBuildingType BuildingType = ERICBuildingType::Barracks;
 
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Construction",
+        meta = (ClampMin = "0"))
+    int32 ConstructionCost = 100;
+
     UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Building")
     FGuid BuildingId;
 

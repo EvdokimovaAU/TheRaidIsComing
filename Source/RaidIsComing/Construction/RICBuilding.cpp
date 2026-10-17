@@ -15,72 +15,91 @@ ARICBuilding::ARICBuilding()
     BuildingMesh->SetCollisionProfileName(TEXT("BlockAll"));
     BuildingMesh->SetSimulatePhysics(false);
 
-    SetCanBeDamaged(true);
+    SetCanBeDamaged(false);
 }
 
 void ARICBuilding::BeginPlay()
 {
     Super::BeginPlay();
 
-    // Каждый экземпляр получает собственный ID при запуске игры.
     BuildingId = FGuid::NewGuid();
 
-    // Защита от некорректной настройки здоровья.
-    if (!FMath::IsFinite(MaxHP) || MaxHP < 1.0f)
-    {
-        MaxHP = 1.0f;
-    }
+    const bool bIsBarrier =
+        BuildingType == ERICBuildingType::Barrier;
 
-    CurrentHP = MaxHP;
+    SetCanBeDamaged(bIsBarrier);
+
+    if (bIsBarrier)
+    {
+        if (!FMath::IsFinite(MaxHP) || MaxHP < 1.0f)
+        {
+            MaxHP = 100.0f;
+        }
+
+        CurrentHP = MaxHP;
+    }
+    else
+    {
+        CurrentHP = 0.0f;
+    }
 
     UE_LOG(
         LogTemp,
         Log,
-        TEXT("Building spawned: %s | ID: %s | HP: %.1f"),
+        TEXT("Building initialized: %s. ID: %s. Destructible: %s. HP: %.1f"),
         *GetName(),
         *BuildingId.ToString(),
+        bIsBarrier ? TEXT("Yes") : TEXT("No"),
         CurrentHP
     );
 }
 
 float ARICBuilding::TakeDamage(
-    float DamageAmount,
-    const FDamageEvent& DamageEvent,
-    AController* EventInstigator,
-    AActor* DamageCauser
-)
+	float DamageAmount,
+	const FDamageEvent& DamageEvent,
+	AController* EventInstigator,
+	AActor* DamageCauser)
 {
-    if (!CanBeDamaged()
-        || IsActorBeingDestroyed()
-        || CurrentHP <= 0.0f
-        || !FMath::IsFinite(DamageAmount)
-        || DamageAmount <= 0.0f)
-    {
-        return 0.0f;
-    }
+	// Башни и другие типы построек урон не получают.
+	if (BuildingType != ERICBuildingType::Barrier)
+	{
+		return 0.0f;
+	}
 
-    const float AppliedDamage = FMath::Min(
-        DamageAmount,
-        CurrentHP
-    );
+	if (!CanBeDamaged() ||
+		IsActorBeingDestroyed() ||
+		CurrentHP <= 0.0f ||
+		!FMath::IsFinite(DamageAmount) ||
+		DamageAmount <= 0.0f)
+	{
+		return 0.0f;
+	}
 
-    CurrentHP = FMath::Max(
-        0.0f,
-        CurrentHP - AppliedDamage
-    );
+	const float AppliedDamage =
+		FMath::Min(DamageAmount, CurrentHP);
 
-    // Сохраняем стандартные события получения урона Unreal.
-    Super::TakeDamage(
-        AppliedDamage,
-        DamageEvent,
-        EventInstigator,
-        DamageCauser
-    );
+	CurrentHP = FMath::Max(0.0f, CurrentHP - AppliedDamage);
 
-    if (CurrentHP <= 0.0f)
-    {
-        Destroy();
-    }
+	Super::TakeDamage(
+		AppliedDamage,
+		DamageEvent,
+		EventInstigator,
+		DamageCauser
+	);
 
-    return AppliedDamage;
+	UE_LOG(
+		LogTemp,
+		Log,
+		TEXT("Barrier damaged: %s. Damage: %.1f. HP: %.1f"),
+		*GetName(),
+		AppliedDamage,
+		CurrentHP
+	);
+
+	if (CurrentHP <= 0.0f)
+	{
+		Destroy();
+	}
+
+	return AppliedDamage;
 }

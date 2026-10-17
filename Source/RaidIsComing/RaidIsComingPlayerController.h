@@ -6,6 +6,7 @@
 #include "Templates/SubclassOf.h"
 #include "GameFramework/PlayerController.h"
 #include "RaidIsComingPlayerController.generated.h"
+class URICMoneyComponent;
 
 class UNiagaraSystem;
 class UInputMappingContext;
@@ -28,8 +29,17 @@ protected:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Construction")
     TObjectPtr<URICConstructionComponent> ConstructionComponent;
 
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Money")
+    TObjectPtr<URICMoneyComponent> MoneyComponent;
+
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Construction")
     TSubclassOf<ARICBuilding> BarracksClass;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Construction")
+    TSubclassOf<ARICBuilding> ArcherTowerClass;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Construction")
+    TSubclassOf<ARICBuilding> MageTowerClass;
 
     UPROPERTY(VisibleDefaultsOnly, Category = "AI")
     TObjectPtr<UPathFollowingComponent> PathFollowingComponent;
@@ -60,6 +70,10 @@ protected:
     virtual void SetupInputComponent() override;
 
     void StartBarracksPreview();
+    void StartArcherTowerPreview();
+    void StartMageTowerPreview();
+
+    void StartTowerPreview(TSubclassOf<ARICBuilding> BuildingClass);
     void CancelBuildingPreview();
 
     void OnInputStarted();
