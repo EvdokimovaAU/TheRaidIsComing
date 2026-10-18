@@ -31,6 +31,11 @@ void AAIBase::ReceiveDamage(float Amount)
     {
         Die();
     }
+
+    UE_LOG(LogTemp, Warning,
+        TEXT("[AI] %s | Current HP: %.1f"),
+        *GetName(),
+        CurrentHP);
 }
 
 // Проверка жизни

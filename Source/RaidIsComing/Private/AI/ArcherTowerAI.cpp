@@ -60,6 +60,9 @@ void AArcherTowerAI::Attack()
     // Позднее здесь создадим стрелу через SpawnActor.
 
     Super::Attack();
+
+    UE_LOG(LogTemp, Warning,
+        TEXT("[ArcherTower] Attack executed!"));
 }
 
 // Очистка таймера

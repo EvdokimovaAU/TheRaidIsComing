@@ -18,7 +18,7 @@ public:
 
     // Радиус обнаружения противников
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AI|Detection")
-    float DetectionRadius = 500.0f;
+    float DetectionRadius = 35.0f;
 
     // Поиск всех живых врагов в радиусе
     UFUNCTION(BlueprintCallable, Category = "AI|Target")
