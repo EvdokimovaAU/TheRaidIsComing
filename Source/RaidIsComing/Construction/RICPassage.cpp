@@ -3,6 +3,8 @@
 #include "RICBuilding.h"
 #include "Components/BoxComponent.h"
 #include "Components/ArrowComponent.h"
+#include "Components/StaticMeshComponent.h"
+#include "Materials/MaterialInterface.h"
 
 ARICPassage::ARICPassage()
 {
@@ -26,6 +28,18 @@ ARICPassage::ARICPassage()
 
 	DirectionArrow->SetupAttachment(PassageBounds);
 	DirectionArrow->SetHiddenInGame(true);
+
+	HighlightMesh = CreateDefaultSubobject<UStaticMeshComponent>(
+		TEXT("HighlightMesh")
+	);
+
+	HighlightMesh->SetupAttachment(PassageBounds);
+	HighlightMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	HighlightMesh->SetGenerateOverlapEvents(false);
+	HighlightMesh->SetCanEverAffectNavigation(false);
+	HighlightMesh->SetCastShadow(false);
+	HighlightMesh->SetVisibility(false);
+	HighlightMesh->SetHiddenInGame(true);
 }
 
 void ARICPassage::OnConstruction(const FTransform& Transform)
@@ -44,12 +58,25 @@ void ARICPassage::OnConstruction(const FTransform& Transform)
 	RingId = FMath::Max(0, RingId);
 
 	PassageBounds->SetBoxExtent(HalfSize);
+
+	// Используем стандартный Plane размером 100 x 100 см.
+// Origin прохода располагаем на уровне пола.
+	HighlightMesh->SetRelativeLocation(FVector(0.0, 0.0, 2.0));
+	HighlightMesh->SetRelativeRotation(FRotator::ZeroRotator);
+	HighlightMesh->SetRelativeScale3D(
+		FVector(HalfSize.X / 50.0, HalfSize.Y / 50.0, 1.0)
+	);
+
+	HighlightMesh->SetMaterial(0, HighlightMaterial.Get());
+
+	RefreshHighlight();
 }
 
 void ARICPassage::BeginPlay()
 {
 	Super::BeginPlay();
-
+	// Проверка в редакторе не должна оставлять подсветку включённой в игре.
+	SetHighlighted(false);
 	PassageId = FGuid::NewGuid();
 
 	UE_LOG(
@@ -94,7 +121,7 @@ bool ARICPassage::RegisterBarrier(ARICBuilding* Barrier)
 		this,
 		&ARICPassage::OnBarrierDestroyed
 	);
-
+	RefreshHighlight();
 	UE_LOG(
 		LogTemp,
 		Log,
@@ -114,7 +141,7 @@ void ARICPassage::OnBarrierDestroyed(AActor* DestroyedActor)
 	}
 
 	InstalledBarrier = nullptr;
-
+	RefreshHighlight();
 	UE_LOG(
 		LogTemp,
 		Log,
@@ -137,4 +164,32 @@ void ARICPassage::EndPlay(
 	InstalledBarrier = nullptr;
 
 	Super::EndPlay(EndPlayReason);
+}
+void ARICPassage::SetHighlighted(bool bEnabled)
+{
+	bHighlightRequested = bEnabled;
+	RefreshHighlight();
+}
+
+void ARICPassage::RefreshHighlight()
+{
+	if (!HighlightMesh)
+	{
+		return;
+	}
+
+	const bool bShow = bHighlightRequested && IsOpen();
+
+	HighlightMesh->SetVisibility(bShow);
+	HighlightMesh->SetHiddenInGame(!bShow);
+}
+
+void ARICPassage::ShowHighlight()
+{
+	SetHighlighted(true);
+}
+
+void ARICPassage::HideHighlight()
+{
+	SetHighlighted(false);
 }

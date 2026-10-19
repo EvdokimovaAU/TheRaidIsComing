@@ -5,6 +5,8 @@
 #include "RICPassage.generated.h"
 
 class UBoxComponent;
+class UStaticMeshComponent;
+class UMaterialInterface;
 class UArrowComponent;
 class ARICBuilding;
 
@@ -45,6 +47,22 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category="Passage")
 	bool RegisterBarrier(ARICBuilding* Barrier);
+	// Плоскость, показывающая место установки преграды.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Passage|Highlight")
+	TObjectPtr<UStaticMeshComponent> HighlightMesh;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Passage|Highlight")
+	TObjectPtr<UMaterialInterface> HighlightMaterial;
+
+	UFUNCTION(BlueprintCallable, Category = "Passage|Highlight")
+	void SetHighlighted(bool bEnabled);
+
+	// Кнопки для проверки подсветки на выбранном проходе в редакторе.
+	UFUNCTION(CallInEditor, Category = "Passage|Highlight")
+	void ShowHighlight();
+
+	UFUNCTION(CallInEditor, Category = "Passage|Highlight")
+	void HideHighlight();
 
 protected:
 	virtual void BeginPlay() override;
@@ -54,6 +72,9 @@ protected:
 	) override;
 
 private:
+	bool bHighlightRequested = false;
+
+	void RefreshHighlight();
 	UFUNCTION()
 	void OnBarrierDestroyed(AActor* DestroyedActor);
 };
