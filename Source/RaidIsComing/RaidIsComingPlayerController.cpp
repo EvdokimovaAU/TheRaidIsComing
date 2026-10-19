@@ -72,6 +72,12 @@ void ARaidIsComingPlayerController::SetupInputComponent()
         this,
         &ARaidIsComingPlayerController::StartMageTowerPreview);
 
+    InputComponent->BindKey(
+        EKeys::Three,
+        IE_Pressed,
+        this,
+        &ARaidIsComingPlayerController::StartBarrierPreview);
+
     // Отмена строительства.
     InputComponent->BindKey(
         EKeys::RightMouseButton,
@@ -362,6 +368,25 @@ void ARaidIsComingPlayerController::StartTowerPreview(
     {
         StopMovement();
 
+        FollowTime = 0.0f;
+        bSuppressDestinationUntilRelease = true;
+    }
+}
+void ARaidIsComingPlayerController::StartBarrierPreview()
+{
+    UE_LOG(LogTemp, Warning, TEXT("BARRIER TEST: key 3 received"));
+    if (!ConstructionComponent || !BarrierClass)
+    {
+        UE_LOG(
+            LogTemp,
+            Warning,
+            TEXT("Cannot select barrier: assign BarrierClass in BP_RICPlayerController."));
+        return;
+    }
+
+    if (ConstructionComponent->StartPreview(BarrierClass))
+    {
+        StopMovement();
         FollowTime = 0.0f;
         bSuppressDestinationUntilRelease = true;
     }

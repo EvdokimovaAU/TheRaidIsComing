@@ -4,7 +4,7 @@
 #include "RICBuildZone.h"
 #include "RICPlacementMath.h"
 #include "RICMoneyComponent.h"
-
+#include "RICPassage.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/StaticMeshActor.h"
 #include "Engine/World.h"
@@ -126,10 +126,7 @@ bool URICConstructionComponent::StartPreview(
         return false;
     }
 
-    if (Defaults->BuildingType == ERICBuildingType::Barrier)
-    {
-        return false;
-    }
+    
 
     CancelPreview();
 
@@ -253,6 +250,8 @@ void URICConstructionComponent::CancelPreview()
     SelectedBuildingClass = nullptr;
 
     UpdateZoneHighlights(false);
+    SelectedPassage.Reset();
+    HidePassageHighlights();
 }
 
 bool URICConstructionComponent::IsBuildingMode() const
@@ -292,7 +291,11 @@ void URICConstructionComponent::UpdatePreviewPosition()
     {
         return;
     }
-
+    if (SelectedType == ERICBuildingType::Barrier)
+    {
+        UpdateBarrierPreviewPosition();
+        return;
+    }
     APlayerController* Controller =
         Cast<APlayerController>(GetOwner());
 
@@ -503,7 +506,11 @@ bool URICConstructionComponent::TryPlacePreview()
     {
         return false;
     }
-
+    // Установку и оплату преград подключим следующим этапом.
+    if (SelectedType == ERICBuildingType::Barrier)
+    {
+        return false;
+    }
     
     UpdatePreviewPosition();
 
@@ -722,4 +729,167 @@ bool URICConstructionComponent::TryPlacePreview()
     CancelPreview();
 
     return true;
+}
+bool URICConstructionComponent::GetBarrierPreviewTransform(
+    const ARICPassage& Passage,
+    FTransform& OutTransform) const
+{
+    if (!IsValid(PreviewActor.Get())
+        || Passage.IsActorBeingDestroyed()
+        || !Passage.IsOpen())
+    {
+        return false;
+    }
+
+    // Размер прохода задаём через HalfSize.
+    // Разрешён только поворот вокруг вертикальной оси.
+    if (!Passage.GetActorScale3D().Equals(
+        FVector::OneVector, 0.0001)
+        || !Passage.GetActorUpVector().Equals(
+            FVector::UpVector, 0.0001))
+    {
+        return false;
+    }
+
+    constexpr double Tolerance = 0.001;
+
+    if (FootprintHalfSize.X > Passage.HalfSize.X + Tolerance
+        || FootprintHalfSize.Y > Passage.HalfSize.Y + Tolerance)
+    {
+        return false;
+    }
+
+    const FRotator Rotation(
+        0.0,
+        Passage.GetActorRotation().Yaw,
+        0.0);
+
+    // Смещение центра меша тоже поворачиваем вместе с преградой.
+    const FVector RotatedOffset = Rotation.RotateVector(
+        FVector(PreviewCenterOffset.X, PreviewCenterOffset.Y, 0.0));
+
+    FVector Location = Passage.GetActorLocation() - RotatedOffset;
+    Location.Z = Passage.GetActorLocation().Z + PreviewHeightOffset;
+
+    OutTransform = FTransform(
+        Rotation,
+        Location,
+        PreviewActor->GetActorScale3D());
+
+    const UStaticMeshComponent* Mesh =
+        PreviewActor->GetStaticMeshComponent();
+
+    if (!Mesh || !Mesh->GetStaticMesh())
+    {
+        return false;
+    }
+
+    const FBoxSphereBounds CandidateBounds =
+        Mesh->CalcBounds(OutTransform);
+
+    return !HasBuildingOverlap(CandidateBounds);
+}
+void URICConstructionComponent::UpdateBarrierPreviewPosition()
+{
+    bHasValidZonePosition = false;
+    SelectedPassage.Reset();
+
+    UWorld* World = GetWorld();
+    APlayerController* Controller =
+        Cast<APlayerController>(GetOwner());
+
+    if (!World || !Controller || !IsValid(PreviewActor.Get()))
+    {
+        HidePassageHighlights();
+
+        if (IsValid(PreviewActor.Get()))
+        {
+            PreviewActor->SetActorHiddenInGame(true);
+        }
+
+        return;
+    }
+
+    FVector RayOrigin = FVector::ZeroVector;
+    FVector RayDirection = FVector::ZeroVector;
+
+    const bool bHasMouseRay =
+        Controller->DeprojectMousePositionToWorld(
+            RayOrigin, RayDirection)
+        && FMath::Abs(RayDirection.Z) > 0.000001;
+
+    double BestDistanceSquared = 1.e30;
+    FTransform BestTransform = FTransform::Identity;
+
+    for (TActorIterator<ARICPassage> It(World); It; ++It)
+    {
+        ARICPassage* Passage = *It;
+
+        FTransform CandidateTransform;
+        const bool bAvailable =
+            GetBarrierPreviewTransform(*Passage, CandidateTransform);
+
+        Passage->SetHighlighted(bAvailable);
+
+        if (!bAvailable || !bHasMouseRay)
+        {
+            continue;
+        }
+
+        const double DistanceAlongRay =
+            (Passage->GetActorLocation().Z - RayOrigin.Z)
+            / RayDirection.Z;
+
+        if (DistanceAlongRay < 0.0)
+        {
+            continue;
+        }
+
+        const FVector CursorOnPlane =
+            RayOrigin + RayDirection * DistanceAlongRay;
+
+        const FVector LocalCursor =
+            Passage->GetActorTransform().InverseTransformPosition(
+                CursorOnPlane);
+
+        // Выбираем проход, только когда курсор внутри его площади.
+        if (FMath::Abs(LocalCursor.X) > Passage->HalfSize.X
+            || FMath::Abs(LocalCursor.Y) > Passage->HalfSize.Y)
+        {
+            continue;
+        }
+
+        const double DistanceSquared =
+            LocalCursor.X * LocalCursor.X
+            + LocalCursor.Y * LocalCursor.Y;
+
+        if (DistanceSquared < BestDistanceSquared)
+        {
+            BestDistanceSquared = DistanceSquared;
+            BestTransform = CandidateTransform;
+            SelectedPassage = Passage;
+            bHasValidZonePosition = true;
+        }
+    }
+
+    PreviewActor->SetActorHiddenInGame(!bHasValidZonePosition);
+
+    if (bHasValidZonePosition)
+    {
+        PreviewActor->SetActorTransform(BestTransform);
+    }
+}
+void URICConstructionComponent::HidePassageHighlights()
+{
+    UWorld* World = GetWorld();
+
+    if (!World)
+    {
+        return;
+    }
+
+    for (TActorIterator<ARICPassage> It(World); It; ++It)
+    {
+        It->SetHighlighted(false);
+    }
 }

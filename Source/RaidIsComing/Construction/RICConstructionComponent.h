@@ -9,6 +9,7 @@
 class ARICBuilding;
 class AStaticMeshActor;
 class UMaterialInterface;
+class ARICPassage;
 
 UCLASS(
     ClassGroup = (Construction),
@@ -49,6 +50,14 @@ protected:
         const EEndPlayReason::Type EndPlayReason) override;
 
 private:
+    TWeakObjectPtr<ARICPassage> SelectedPassage;
+
+    void UpdateBarrierPreviewPosition();
+    void HidePassageHighlights();
+
+    bool GetBarrierPreviewTransform(
+        const ARICPassage& Passage,
+        FTransform& OutTransform) const;
     UPROPERTY(Transient)
     TObjectPtr<AStaticMeshActor> PreviewActor;
 

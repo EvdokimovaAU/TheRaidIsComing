@@ -41,6 +41,9 @@ protected:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Construction")
     TSubclassOf<ARICBuilding> MageTowerClass;
 
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Construction")
+    TSubclassOf<ARICBuilding> BarrierClass;
+
     UPROPERTY(VisibleDefaultsOnly, Category = "AI")
     TObjectPtr<UPathFollowingComponent> PathFollowingComponent;
 
@@ -72,6 +75,7 @@ protected:
     void StartBarracksPreview();
     void StartArcherTowerPreview();
     void StartMageTowerPreview();
+    void StartBarrierPreview();
 
     void StartTowerPreview(TSubclassOf<ARICBuilding> BuildingClass);
     void CancelBuildingPreview();
