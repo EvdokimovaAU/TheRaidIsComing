@@ -126,7 +126,7 @@ bool URICConstructionComponent::StartPreview(
         return false;
     }
 
-    
+
 
     CancelPreview();
 
@@ -224,7 +224,7 @@ bool URICConstructionComponent::StartPreview(
     SetComponentTickEnabled(true);
     UpdatePreviewPosition();
 
-    if (!bHasValidZonePosition)
+    if (!bHasValidZonePosition && SelectedType != ERICBuildingType::Barrier)
     {
         UE_LOG(
             LogTemp,
@@ -506,12 +506,135 @@ bool URICConstructionComponent::TryPlacePreview()
     {
         return false;
     }
-    // Установку и оплату преград подключим следующим этапом.
     if (SelectedType == ERICBuildingType::Barrier)
     {
-        return false;
+        // Заново проверяем курсор и доступность прохода в момент клика.
+        UpdateBarrierPreviewPosition();
+
+        ARICPassage* Passage = SelectedPassage.Get();
+        UWorld* World = GetWorld();
+        const ARICBuilding* Defaults = SelectedBuildingClass.GetDefaultObject();
+        URICMoneyComponent* Money = GetOwner()
+            ? GetOwner()->FindComponentByClass<URICMoneyComponent>()
+            : nullptr;
+
+        if (!bHasValidZonePosition || !IsValid(Passage) || !World
+            || !Defaults || !IsValid(Money)
+            || Defaults->BuildingType != ERICBuildingType::Barrier)
+        {
+            UE_LOG(LogTemp, Warning,
+                TEXT("Barrier rejected: select an available passage and check the barrier class/money component."));
+            return false;
+        }
+
+        FTransform PlacementTransform;
+        if (!GetBarrierPreviewTransform(*Passage, PlacementTransform))
+        {
+            return false;
+        }
+
+        const int32 Cost = Defaults->ConstructionCost;
+        if (!Money->CanAfford(Cost))
+        {
+            UE_LOG(LogTemp, Warning,
+                TEXT("Barrier rejected: cost %d, balance %d."),
+                Cost, Money->CurrentMoney);
+            return false;
+        }
+
+        FActorSpawnParameters SpawnParams;
+        SpawnParams.Owner = GetOwner();
+        SpawnParams.SpawnCollisionHandlingOverride =
+            ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+        ARICBuilding* Barrier = World->SpawnActor<ARICBuilding>(
+            SelectedBuildingClass.Get(),
+            PlacementTransform.GetLocation(),
+            PlacementTransform.Rotator(),
+            SpawnParams);
+
+        if (!IsValid(Barrier) || Barrier->IsActorBeingDestroyed())
+        {
+            UE_LOG(LogTemp, Warning,
+                TEXT("Barrier rejected: could not spawn barrier."));
+            return false;
+        }
+
+        // Как у башен: итоговый масштаб должен совпадать с превью.
+        Barrier->SetActorTransform(PlacementTransform);
+
+        UStaticMeshComponent* Mesh = Barrier->BuildingMesh.Get();
+        if (!IsValid(Passage) || Passage->IsActorBeingDestroyed()
+            || !Passage->IsOpen() || !IsValid(Money)
+            || Barrier->BuildingType != ERICBuildingType::Barrier
+            || !Mesh || !Mesh->GetStaticMesh())
+        {
+            Barrier->Destroy();
+            UE_LOG(LogTemp, Warning,
+                TEXT("Barrier rejected: passage or spawned barrier is no longer valid."));
+            return false;
+        }
+
+        // Blueprint мог изменить меш при создании.
+        // Проверяем реальные размеры в координатах прохода:
+        // так поворот прохода вокруг Z не мешает проверке границ.
+        const FTransform MeshInPassage =
+            Mesh->GetComponentTransform().GetRelativeTransform(
+                Passage->GetActorTransform());
+        const FBoxSphereBounds LocalBounds = Mesh->CalcBounds(MeshInPassage);
+        const FBoxSphereBounds WorldBounds =
+            Mesh->CalcBounds(Mesh->GetComponentTransform());
+
+        constexpr double Tolerance = 0.01;
+        const bool bFitsPassage =
+            !LocalBounds.Origin.ContainsNaN()
+            && !LocalBounds.BoxExtent.ContainsNaN()
+            && !WorldBounds.Origin.ContainsNaN()
+            && !WorldBounds.BoxExtent.ContainsNaN()
+            && LocalBounds.BoxExtent.X > 0.0
+            && LocalBounds.BoxExtent.Y > 0.0
+            && FMath::Abs(LocalBounds.Origin.X) + LocalBounds.BoxExtent.X
+            <= Passage->HalfSize.X + Tolerance
+            && FMath::Abs(LocalBounds.Origin.Y) + LocalBounds.BoxExtent.Y
+            <= Passage->HalfSize.Y + Tolerance
+            && FMath::Abs(LocalBounds.Origin.Z - LocalBounds.BoxExtent.Z)
+            <= Tolerance;
+
+        if (!bFitsPassage || HasBuildingOverlap(WorldBounds, Barrier))
+        {
+            Barrier->Destroy();
+            UE_LOG(LogTemp, Warning,
+                TEXT("Barrier rejected: spawned mesh does not fit or overlaps another building."));
+            return false;
+        }
+
+        // Сначала закрепляем преграду за проходом, затем оплачиваем.
+        // Если оплата не прошла, уничтожение преграды снова откроет проход.
+        if (!Passage->RegisterBarrier(Barrier))
+        {
+            Barrier->Destroy();
+            UE_LOG(LogTemp, Warning,
+                TEXT("Barrier rejected: passage registration failed."));
+            return false;
+        }
+
+        if (!Money->TrySpend(Cost))
+        {
+            Barrier->Destroy();
+            UE_LOG(LogTemp, Warning,
+                TEXT("Barrier rejected: payment failed."));
+            return false;
+        }
+
+        UE_LOG(LogTemp, Log,
+            TEXT("Barrier placed: %s. Passage: %s. Cost: %d. Balance: %d."),
+            *Barrier->GetName(), *Passage->PassageId.ToString(),
+            Cost, Money->CurrentMoney);
+
+        CancelPreview();
+        return true;
     }
-    
+
     UpdatePreviewPosition();
 
     if (!bHasValidZonePosition)
