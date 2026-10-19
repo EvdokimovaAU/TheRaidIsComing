@@ -1,11 +1,11 @@
 
-#include "AI/ArcherProjectile.h"
+#include "AI/ProjectileArcher.h"
 #include "AI/AIBase.h"
 
 #include "Components/SceneComponent.h"
 #include "Engine/World.h"
 
-AArcherProjectile::AArcherProjectile()
+AProjectileArcher::AProjectileArcher()
 {
     PrimaryActorTick.bCanEverTick = true;
 
@@ -22,14 +22,14 @@ AArcherProjectile::AArcherProjectile()
     InitialLifeSpan = 10.0f;
 }
 
-void AArcherProjectile::BeginPlay()
+void AProjectileArcher::BeginPlay()
 {
     Super::BeginPlay();
 
     StartLocation = GetActorLocation();
 }
 
-void AArcherProjectile::InitializeProjectile(
+void AProjectileArcher::InitializeProjectile(
     AAIBase* NewTarget,
     float NewDamage)
 {
@@ -60,7 +60,7 @@ void AArcherProjectile::InitializeProjectile(
     bInitialized = true;
 }
 
-void AArcherProjectile::Tick(float DeltaTime)
+void AProjectileArcher::Tick(float DeltaTime)
 {
     Super::Tick(DeltaTime);
 
@@ -85,8 +85,7 @@ void AArcherProjectile::Tick(float DeltaTime)
         1.0f
     );
 
-    //  аждый кадр обновл€ем конечную точку,
-    // чтобы учитывать перемещение противника.
+    // ќбновл€ем конечную точку с учЄтом движени€ врага.
     const FVector EndLocation =
         TargetActor->GetActorLocation();
 
@@ -127,7 +126,7 @@ void AArcherProjectile::Tick(float DeltaTime)
     }
 }
 
-void AArcherProjectile::HitTarget()
+void AProjectileArcher::HitTarget()
 {
     if (TargetActor.IsValid() && TargetActor->IsAlive())
     {

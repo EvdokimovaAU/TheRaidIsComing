@@ -1,13 +1,25 @@
+
+# Unreal Engine
 .vs/
 Binaries/
 DerivedDataCache/
 Intermediate/
 Saved/
 
+# Visual Studio
 *.sln
 *.slnx
 *.VC.db
 *.VC.VC.opendb
+*.suo
+*.user
+*.sdf
+*.opensdf
 
-.vsconfig
+# IDE
+.vscode/
 .idea/
+
+# Temporary files
+*.tmp
+*.log
