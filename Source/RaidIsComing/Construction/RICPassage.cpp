@@ -92,8 +92,7 @@ void ARICPassage::BeginPlay()
 
 bool ARICPassage::IsOpen() const
 {
-	return !IsValid(InstalledBarrier.Get()) ||
-		InstalledBarrier->IsActorBeingDestroyed();
+	return GetInstalledBarrier() == nullptr;
 }
 
 bool ARICPassage::RegisterBarrier(ARICBuilding* Barrier)
@@ -192,4 +191,32 @@ void ARICPassage::ShowHighlight()
 void ARICPassage::HideHighlight()
 {
 	SetHighlighted(false);
+}
+
+ARICBuilding* ARICPassage::GetInstalledBarrier() const
+{
+	ARICBuilding* Barrier = InstalledBarrier.Get();
+	return IsValid(Barrier) && !Barrier->IsActorBeingDestroyed()
+		? Barrier : nullptr;
+}
+
+FRICPassageData ARICPassage::GetPassageData() const
+{
+	FRICPassageData Data;
+	Data.Passage = const_cast<ARICPassage*>(this);
+	Data.PassageId = PassageId;
+	Data.RingId = RingId;
+	Data.PassageLocation = GetActorLocation();
+
+	ARICBuilding* Barrier = GetInstalledBarrier();
+	Data.bIsOpen = (Barrier == nullptr);
+	if (Barrier)
+	{
+		Data.Barrier = Barrier;
+		Data.BarrierId = Barrier->BuildingId;
+		Data.BarrierLocation = Barrier->GetActorLocation();
+		Data.BarrierHP = Barrier->CurrentHP;
+		Data.BarrierMaxHP = Barrier->MaxHP;
+	}
+	return Data;
 }
