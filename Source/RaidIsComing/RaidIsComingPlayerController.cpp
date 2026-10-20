@@ -54,7 +54,7 @@ void ARaidIsComingPlayerController::SetupInputComponent()
 
     // Выбор казармы.
     InputComponent->BindKey(
-        EKeys::B,
+        EKeys::E,
         IE_Pressed,
         this,
         &ARaidIsComingPlayerController::StartBarracksPreview
