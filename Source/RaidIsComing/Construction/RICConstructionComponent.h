@@ -6,6 +6,7 @@
 #include "RICBuildTypes.h"
 #include "RICConstructionComponent.generated.h"
 
+class UStaticMeshComponent;
 class ARICBuilding;
 class AStaticMeshActor;
 class UMaterialInterface;
@@ -76,6 +77,7 @@ private:
     void UpdatePreviewPosition();
     void UpdateZoneHighlights(bool bEnabled);
     bool HasBuildingOverlap(
-        const FBoxSphereBounds& CandidateBounds,
+        const UStaticMeshComponent* CandidateMesh,
+        const FTransform& CandidateTransform,
         const ARICBuilding* IgnoredBuilding = nullptr) const;
 };

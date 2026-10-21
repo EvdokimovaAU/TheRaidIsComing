@@ -14,6 +14,87 @@
 
 namespace
 {
+    // Проекция локального bounding box меша на плоскость XY.
+    // Полуоси сохраняют поворот и масштаб вместо расширения до мирового AABB.
+    struct FBuildingFootprint
+    {
+        FVector2D Center;
+        FVector2D HalfAxes[3];
+    };
+
+    bool MakeBuildingFootprint(
+        const UStaticMeshComponent* Mesh,
+        const FTransform& Transform,
+        FBuildingFootprint& Out)
+    {
+        if (!IsValid(Mesh) || !Mesh->GetStaticMesh()
+            || Transform.ContainsNaN())
+        {
+            return false;
+        }
+
+        const FBoxSphereBounds Local = Mesh->CalcBounds(FTransform::Identity);
+        if (Local.Origin.ContainsNaN() || Local.BoxExtent.ContainsNaN()
+            || Local.BoxExtent.X <= 0.0 || Local.BoxExtent.Y <= 0.0)
+        {
+            return false;
+        }
+
+        const FVector Center = Transform.TransformPosition(Local.Origin);
+        Out.Center = FVector2D(Center.X, Center.Y);
+        const FVector LocalHalfAxes[3] = {
+            FVector(Local.BoxExtent.X, 0.0, 0.0),
+            FVector(0.0, Local.BoxExtent.Y, 0.0),
+            FVector(0.0, 0.0, Local.BoxExtent.Z)
+        };
+        for (int32 Index = 0; Index < 3; ++Index)
+        {
+            const FVector Axis = Transform.TransformVector(LocalHalfAxes[Index]);
+            Out.HalfAxes[Index] = FVector2D(Axis.X, Axis.Y);
+        }
+        return true;
+    }
+
+    bool FootprintsOverlap(
+        const FBuildingFootprint& A,
+        const FBuildingFootprint& B)
+    {
+        constexpr double ContactTolerance = 0.001;
+        const FVector2D Delta = B.Center - A.Center;
+
+        // SAT: достаточно найти одну ось, на которой площади разделены.
+        // Для горизонтальных мешей это обычная проверка двух OBB.
+        // Проекция третьей полуоси учитывает также наклон меша.
+        for (int32 Shape = 0; Shape < 2; ++Shape)
+        {
+            const FBuildingFootprint& Source = Shape == 0 ? A : B;
+            for (int32 Edge = 0; Edge < 3; ++Edge)
+            {
+                const FVector2D HalfAxis = Source.HalfAxes[Edge];
+                const double Length = HalfAxis.Size();
+                if (Length <= 1.e-8)
+                {
+                    continue;
+                }
+                const FVector2D Axis(-HalfAxis.Y / Length, HalfAxis.X / Length);
+                double RadiusA = 0.0;
+                double RadiusB = 0.0;
+                for (int32 Index = 0; Index < 3; ++Index)
+                {
+                    RadiusA += FMath::Abs(FVector2D::DotProduct(A.HalfAxes[Index], Axis));
+                    RadiusB += FMath::Abs(FVector2D::DotProduct(B.HalfAxes[Index], Axis));
+                }
+                const double Distance = FMath::Abs(FVector2D::DotProduct(Delta, Axis));
+                if (Distance >= RadiusA + RadiusB - ContactTolerance)
+                {
+                    // Касание разрешено, как и в прежней проверке.
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
     bool IsSupportedZone(const ARICBuildZone& Zone)
     {
         // Зона должна быть горизонтальной.
@@ -433,70 +514,37 @@ void URICConstructionComponent::EndPlay(
     Super::EndPlay(EndPlayReason);
 }
 bool URICConstructionComponent::HasBuildingOverlap(
-    const FBoxSphereBounds& CandidateBounds,
+    const UStaticMeshComponent* CandidateMesh,
+    const FTransform& CandidateTransform,
     const ARICBuilding* IgnoredBuilding) const
 {
     UWorld* World = GetWorld();
-
-    if (!World)
+    FBuildingFootprint Candidate;
+    if (!World || !MakeBuildingFootprint(CandidateMesh, CandidateTransform, Candidate))
     {
         return true;
     }
 
-    // Небольшой допуск для погрешности вычислений.
-    constexpr double ContactTolerance = 0.001;
-
     for (TActorIterator<ARICBuilding> It(World); It; ++It)
     {
         ARICBuilding* Building = *It;
-
-        if (!IsValid(Building)
-            || Building == IgnoredBuilding
+        if (!IsValid(Building) || Building == IgnoredBuilding
             || Building->IsActorBeingDestroyed())
         {
             continue;
         }
-
-        UStaticMeshComponent* OtherMesh =
-            Building->BuildingMesh.Get();
-
-        if (!OtherMesh || !OtherMesh->GetStaticMesh())
+        const UStaticMeshComponent* OtherMesh = Building->BuildingMesh.Get();
+        if (!IsValid(OtherMesh) || !OtherMesh->GetStaticMesh())
         {
             continue;
         }
-
-        const FBoxSphereBounds OtherBounds =
-            OtherMesh->CalcBounds(
-                OtherMesh->GetComponentTransform());
-
-        const double DistanceX = FMath::Abs(
-            CandidateBounds.Origin.X - OtherBounds.Origin.X);
-
-        const double DistanceY = FMath::Abs(
-            CandidateBounds.Origin.Y - OtherBounds.Origin.Y);
-
-        const double CombinedHalfX =
-            CandidateBounds.BoxExtent.X
-            + OtherBounds.BoxExtent.X;
-
-        const double CombinedHalfY =
-            CandidateBounds.BoxExtent.Y
-            + OtherBounds.BoxExtent.Y;
-
-        // Пересечение должно быть одновременно по обеим осям.
-        // Равенство границ считается касанием и разрешено.
-        const bool bOverlapX =
-            DistanceX < CombinedHalfX - ContactTolerance;
-
-        const bool bOverlapY =
-            DistanceY < CombinedHalfY - ContactTolerance;
-
-        if (bOverlapX && bOverlapY)
+        FBuildingFootprint Other;
+        if (!MakeBuildingFootprint(OtherMesh, OtherMesh->GetComponentTransform(), Other)
+            || FootprintsOverlap(Candidate, Other))
         {
             return true;
         }
     }
-
     return false;
 }
 
@@ -600,7 +648,7 @@ bool URICConstructionComponent::TryPlacePreview()
             && FMath::Abs(LocalBounds.Origin.Z - LocalBounds.BoxExtent.Z)
             <= Tolerance;
 
-        if (!bFitsPassage || HasBuildingOverlap(WorldBounds, Barrier))
+        if (!bFitsPassage || HasBuildingOverlap(Mesh, Mesh->GetComponentTransform(), Barrier))
         {
             Barrier->Destroy();
             UE_LOG(LogTemp, Warning,
@@ -689,11 +737,7 @@ bool URICConstructionComponent::TryPlacePreview()
         return false;
     }
 
-    const FBoxSphereBounds PreviewBounds =
-        PreviewMesh->CalcBounds(
-            PreviewMesh->GetComponentTransform());
-
-    if (HasBuildingOverlap(PreviewBounds))
+    if (HasBuildingOverlap(PreviewMesh, PreviewMesh->GetComponentTransform()))
     {
         UE_LOG(
             LogTemp,
@@ -820,7 +864,7 @@ bool URICConstructionComponent::TryPlacePreview()
     }
 
     if (!bInsideAllowedZone
-        || HasBuildingOverlap(ActualBounds, NewBuilding))
+        || HasBuildingOverlap(BuildingMesh, BuildingMesh->GetComponentTransform(), NewBuilding))
     {
         NewBuilding->Destroy();
 
@@ -907,10 +951,7 @@ bool URICConstructionComponent::GetBarrierPreviewTransform(
         return false;
     }
 
-    const FBoxSphereBounds CandidateBounds =
-        Mesh->CalcBounds(OutTransform);
-
-    return !HasBuildingOverlap(CandidateBounds);
+    return !HasBuildingOverlap(Mesh, OutTransform);
 }
 void URICConstructionComponent::UpdateBarrierPreviewPosition()
 {
