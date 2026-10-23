@@ -1,10 +1,14 @@
+
 #include "AI/EnemySwordsmanAI.h"
+#include "AI/EnemySwordsmanAnimInstance.h"
+
 #include "Engine/DamageEvents.h"
 #include "AIController.h"
 #include "Construction/RICBuilding.h"
 #include "TimerManager.h"
 #include "Engine/World.h"
 #include "GameFramework/DamageType.h"
+#include "Components/SkeletalMeshComponent.h"
 
 AEnemySwordsmanAI::AEnemySwordsmanAI()
 {
@@ -50,7 +54,7 @@ void AEnemySwordsmanAI::CheckCapitolDistance()
     }
 }
 
-// Start attacking
+// Start attacking the Capitol
 void AEnemySwordsmanAI::StartCapitolAttack()
 {
     ARICBuilding* Building = Cast<ARICBuilding>(Capitol.Get());
@@ -104,6 +108,18 @@ void AEnemySwordsmanAI::AttackCapitol()
         return;
     }
 
+    // Play attack animation
+    if (USkeletalMeshComponent* MeshComponent = GetMesh())
+    {
+        if (UEnemySwordsmanAnimInstance* AnimInstance =
+            Cast<UEnemySwordsmanAnimInstance>(
+                MeshComponent->GetAnimInstance()))
+        {
+            AnimInstance->PlayAttackAnimation();
+        }
+    }
+
+    // Apply damage
     FDamageEvent DamageEvent(
         UDamageType::StaticClass()
     );
@@ -132,7 +148,19 @@ void AEnemySwordsmanAI::AttackCapitol()
 void AEnemySwordsmanAI::StopCapitolAttack()
 {
     GetWorldTimerManager().ClearTimer(CapitolAttackTimer);
+
     bAttackingCapitol = false;
+
+    // Stop attack animation
+    if (USkeletalMeshComponent* MeshComponent = GetMesh())
+    {
+        if (UEnemySwordsmanAnimInstance* AnimInstance =
+            Cast<UEnemySwordsmanAnimInstance>(
+                MeshComponent->GetAnimInstance()))
+        {
+            AnimInstance->StopAttackAnimation();
+        }
+    }
 }
 
 // Existing wall logic
@@ -156,6 +184,7 @@ void AEnemySwordsmanAI::StartWallAttack(AActor* Wall)
     }
 
     StopWallAttack();
+
     TargetWall = Wall;
 
     GetWorldTimerManager().SetTimer(
@@ -181,6 +210,7 @@ void AEnemySwordsmanAI::AttackWall()
 void AEnemySwordsmanAI::StopWallAttack()
 {
     GetWorldTimerManager().ClearTimer(WallAttackTimer);
+
     TargetWall = nullptr;
 }
 
