@@ -29,9 +29,10 @@ public:
     UFUNCTION(BlueprintPure, Category = "Searchlight")
     bool IsLightActive() const;
 
-    // Пересечение конуса с ориентированными bounds компонентов объекта.
-    // Bounds являются приближением формы меша; тени/препятствия не учитываются.
-    // Компоненты с тегом IgnoreSearchlight исключаются (например, триггеры).
+    // Shape-компоненты (Box/Sphere/Capsule) проверяются по их форме.
+    // Если есть компоненты с тегом SearchlightVolume, проверяются только они.
+    // Без этого тега для мешей сохранена приблизительная проверка по bounds.
+    // IgnoreSearchlight исключает компонент. Препятствия/тени не учитываются.
     UFUNCTION(BlueprintPure, Category = "Searchlight")
     bool IsActorIlluminated(const AActor* TargetActor) const;
 

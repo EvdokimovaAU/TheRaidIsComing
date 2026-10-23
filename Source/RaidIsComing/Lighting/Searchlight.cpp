@@ -7,19 +7,24 @@
 #include "Components/PrimitiveComponent.h"
 #include "Components/MeshComponent.h"
 #include "Components/ShapeComponent.h"
+#include "Components/BoxComponent.h"
+#include "Components/SphereComponent.h"
+#include "Components/CapsuleComponent.h"
 
 namespace SearchlightGeometry
 {
     // All coordinates are relative to the light and divided by its range.
     // The light volume is a circular cone intersected with a unit sphere:
     // attenuation distance is radial, not distance along the cone axis.
-    struct FBox
+    struct FVolume
     {
-        FVector Center;
-        FVector HalfAxes[3];
+        FVector Center = FVector::ZeroVector;
+        FVector HalfAxes[3] = { FVector::ZeroVector, FVector::ZeroVector, FVector::ZeroVector };
+        FVector CapsuleHalfSegment = FVector::ZeroVector;
+        double Radius = 0.0;
     };
 
-    FVector BoxSupport(const FBox& Box, const FVector& Direction)
+    FVector BoxSupport(const FVolume& Box, const FVector& Direction)
     {
         FVector Result = Box.Center;
         for (int32 I = 0; I < 3; ++I)
@@ -27,6 +32,11 @@ namespace SearchlightGeometry
             Result += Box.HalfAxes[I] *
                 (FVector::DotProduct(Box.HalfAxes[I], Direction) >= 0.0 ? 1.0 : -1.0);
         }
+        Result += Box.CapsuleHalfSegment *
+            (FVector::DotProduct(Box.CapsuleHalfSegment, Direction) >= 0.0 ? 1.0 : -1.0);
+        const double DirectionLength = Direction.Size();
+        if (Box.Radius > 0.0 && DirectionLength > 1.e-15)
+            Result += Direction * (Box.Radius / DirectionLength);
         return Result;
     }
 
@@ -114,7 +124,7 @@ namespace SearchlightGeometry
         return Best;
     }
 
-    bool Intersects(const FBox& Box, const FVector& Axis, double CosAngle,
+    bool Intersects(const FVolume& Box, const FVector& Axis, double CosAngle,
         double SinAngle, double Tolerance)
     {
         const auto Support = [&](const FVector& Direction)
@@ -291,29 +301,82 @@ bool ASearchlight::IsActorIlluminated(const AActor* TargetActor) const
     TInlineComponentArray<UPrimitiveComponent*> Components;
     TargetActor->GetComponents(Components);
     static const FName IgnoreTag(TEXT("IgnoreSearchlight"));
+    static const FName VolumeTag(TEXT("SearchlightVolume"));
+    bool bHasExplicitVolumes = false;
+    for (const UPrimitiveComponent* Component : Components)
+    {
+        if (IsValid(Component) && Component->IsRegistered()
+            && Component->ComponentHasTag(VolumeTag)
+            && !Component->ComponentHasTag(IgnoreTag))
+        {
+            bHasExplicitVolumes = true;
+            break;
+        }
+    }
     for (const UPrimitiveComponent* Component : Components)
     {
         if (!IsValid(Component) || !Component->IsRegistered()
             || Component->ComponentHasTag(IgnoreTag)) continue;
-        // Ignore particles, decals and editor helper primitives.
-        // Meshes work without collision. Shape components require collision.
-        if (!Cast<UMeshComponent>(Component)
-            && !(Cast<UShapeComponent>(Component) && Component->IsCollisionEnabled())) continue;
-
+        const bool bExplicitVolume = Component->ComponentHasTag(VolumeTag);
+        if (bHasExplicitVolumes && !bExplicitVolume) continue;
         const FTransform Transform = Component->GetComponentTransform();
         if (Transform.ContainsNaN()) continue;
-        const FBoxSphereBounds LocalBounds = Component->CalcBounds(FTransform::Identity);
-        const FVector Extent = LocalBounds.BoxExtent;
-        if (LocalBounds.Origin.ContainsNaN() || Extent.ContainsNaN()
-            || Extent.GetMin() < 0.0 || Extent.IsNearlyZero()) continue;
 
-        SearchlightGeometry::FBox Box;
-        Box.Center = (Transform.TransformPosition(LocalBounds.Origin) - Origin) / Range;
-        Box.HalfAxes[0] = Transform.TransformVector(FVector(Extent.X, 0.0, 0.0)) / Range;
-        Box.HalfAxes[1] = Transform.TransformVector(FVector(0.0, Extent.Y, 0.0)) / Range;
-        Box.HalfAxes[2] = Transform.TransformVector(FVector(0.0, 0.0, Extent.Z)) / Range;
+        SearchlightGeometry::FVolume Box;
+        Box.Center = (Component->GetComponentLocation() - Origin) / Range;
+        const UShapeComponent* Shape = Cast<UShapeComponent>(Component);
+        if (Shape)
+        {
+            // Explicit test volumes may have NoCollision: the geometry query
+            // needs neither physics nor overlaps, and must not block gameplay.
+            if (!bExplicitVolume && !Shape->IsCollisionEnabled()) continue;
+            if (const UBoxComponent* BoxComponent = Cast<UBoxComponent>(Shape))
+            {
+                const FVector Extent = BoxComponent->GetScaledBoxExtent();
+                if (Extent.ContainsNaN() || Extent.GetMin() < 0.0 || Extent.IsNearlyZero()) continue;
+                const FQuat Rotation = Transform.GetRotation();
+                Box.HalfAxes[0] = Rotation.RotateVector(FVector(Extent.X, 0.0, 0.0)) / Range;
+                Box.HalfAxes[1] = Rotation.RotateVector(FVector(0.0, Extent.Y, 0.0)) / Range;
+                Box.HalfAxes[2] = Rotation.RotateVector(FVector(0.0, 0.0, Extent.Z)) / Range;
+            }
+            else if (const USphereComponent* Sphere = Cast<USphereComponent>(Shape))
+            {
+                const double Radius = Sphere->GetScaledSphereRadius();
+                if (!FMath::IsFinite(Radius) || Radius <= 0.0) continue;
+                Box.Radius = Radius / Range;
+            }
+            else if (const UCapsuleComponent* Capsule = Cast<UCapsuleComponent>(Shape))
+            {
+                float Radius = 0.0f;
+                float HalfHeight = 0.0f;
+                Capsule->GetScaledCapsuleSize(Radius, HalfHeight);
+                if (!FMath::IsFinite(Radius) || !FMath::IsFinite(HalfHeight)
+                    || Radius <= 0.0f || HalfHeight < Radius) continue;
+                Box.Radius = Radius / Range;
+                Box.CapsuleHalfSegment = Capsule->GetUpVector() * ((HalfHeight - Radius) / Range);
+            }
+            else
+            {
+                continue;
+            }
+        }
+        else
+        {
+            // Explicit volumes must be Box/Sphere/Capsule components.
+            // Do not silently use mesh bounds in explicit-volume mode.
+            if (bHasExplicitVolumes || !Cast<UMeshComponent>(Component)) continue;
+            const FBoxSphereBounds LocalBounds = Component->CalcBounds(FTransform::Identity);
+            const FVector Extent = LocalBounds.BoxExtent;
+            if (LocalBounds.Origin.ContainsNaN() || Extent.ContainsNaN()
+                || Extent.GetMin() < 0.0 || Extent.IsNearlyZero()) continue;
+            Box.Center = (Transform.TransformPosition(LocalBounds.Origin) - Origin) / Range;
+            Box.HalfAxes[0] = Transform.TransformVector(FVector(Extent.X, 0.0, 0.0)) / Range;
+            Box.HalfAxes[1] = Transform.TransformVector(FVector(0.0, Extent.Y, 0.0)) / Range;
+            Box.HalfAxes[2] = Transform.TransformVector(FVector(0.0, 0.0, Extent.Z)) / Range;
+        }
         if (Box.Center.ContainsNaN() || Box.HalfAxes[0].ContainsNaN()
-            || Box.HalfAxes[1].ContainsNaN() || Box.HalfAxes[2].ContainsNaN()) continue;
+            || Box.HalfAxes[1].ContainsNaN() || Box.HalfAxes[2].ContainsNaN()
+            || Box.CapsuleHalfSegment.ContainsNaN() || !FMath::IsFinite(Box.Radius)) continue;
 
         if (SearchlightGeometry::Intersects(Box, Axis, CosAngle, SinAngle, Tolerance)) return true;
     }
