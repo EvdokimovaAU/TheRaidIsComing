@@ -1,3 +1,4 @@
+
 #pragma once
 
 #include "CoreMinimal.h"
@@ -14,6 +15,7 @@ class RAIDISCOMING_API ARICBuilding : public AActor
     GENERATED_BODY()
 
 public:
+
     ARICBuilding();
 
     virtual float TakeDamage(
@@ -23,17 +25,31 @@ public:
         AActor* DamageCauser
     ) override;
 
+    UFUNCTION(BlueprintPure, Category = "Building|Health")
+    bool IsAlive() const;
+
+    UFUNCTION(BlueprintPure, Category = "Building|Health")
+    bool IsDestructible() const;
+
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Building")
     TObjectPtr<UStaticMeshComponent> BuildingMesh;
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Building")
     ERICBuildingType BuildingType = ERICBuildingType::Barracks;
 
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Construction",
-        meta = (ClampMin = "0"))
+    UPROPERTY(
+        EditDefaultsOnly,
+        BlueprintReadOnly,
+        Category = "Construction",
+        meta = (ClampMin = "0")
+    )
     int32 ConstructionCost = 100;
 
-    UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Building")
+    UPROPERTY(
+        VisibleInstanceOnly,
+        BlueprintReadOnly,
+        Category = "Building"
+    )
     FGuid BuildingId;
 
     UPROPERTY(
@@ -52,5 +68,6 @@ public:
     float CurrentHP = 0.0f;
 
 protected:
+
     virtual void BeginPlay() override;
 };

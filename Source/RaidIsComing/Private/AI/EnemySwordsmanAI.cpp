@@ -1,16 +1,141 @@
-
 #include "AI/EnemySwordsmanAI.h"
-
+#include "Engine/DamageEvents.h"
+#include "AIController.h"
+#include "Construction/RICBuilding.h"
 #include "TimerManager.h"
 #include "Engine/World.h"
+#include "GameFramework/DamageType.h"
 
-// Конструктор
 AEnemySwordsmanAI::AEnemySwordsmanAI()
 {
     PrimaryActorTick.bCanEverTick = false;
 }
 
-// Реакция на препятствие
+void AEnemySwordsmanAI::BeginPlay()
+{
+    Super::BeginPlay();
+
+    GetWorldTimerManager().SetTimer(
+        CapitolCheckTimer,
+        this,
+        &AEnemySwordsmanAI::CheckCapitolDistance,
+        0.2f,
+        true
+    );
+}
+
+// Check distance to the Capitol
+void AEnemySwordsmanAI::CheckCapitolDistance()
+{
+    if (!IsAlive() || bAttackingCapitol || IsValid(TargetWall))
+    {
+        return;
+    }
+
+    ARICBuilding* Building = Cast<ARICBuilding>(Capitol.Get());
+
+    if (!IsValid(Building) || !Building->IsAlive())
+    {
+        return;
+    }
+
+    const float Distance = FVector::Dist2D(
+        GetActorLocation(),
+        Building->GetActorLocation()
+    );
+
+    if (Distance <= AttackRange)
+    {
+        StartCapitolAttack();
+    }
+}
+
+// Start attacking
+void AEnemySwordsmanAI::StartCapitolAttack()
+{
+    ARICBuilding* Building = Cast<ARICBuilding>(Capitol.Get());
+
+    if (bAttackingCapitol ||
+        !IsAlive() ||
+        !IsValid(Building) ||
+        !Building->IsAlive())
+    {
+        return;
+    }
+
+    bAttackingCapitol = true;
+
+    StopMovement();
+
+    UE_LOG(LogTemp, Warning,
+        TEXT("[Swordsman] Reached Capitol. Attack started!"));
+
+    GetWorldTimerManager().SetTimer(
+        CapitolAttackTimer,
+        this,
+        &AEnemySwordsmanAI::AttackCapitol,
+        FMath::Max(AttackCooldown, 0.01f),
+        true
+    );
+}
+
+// One attack
+void AEnemySwordsmanAI::AttackCapitol()
+{
+    ARICBuilding* Building = Cast<ARICBuilding>(Capitol.Get());
+
+    if (!IsAlive() ||
+        !IsValid(Building) ||
+        !Building->IsAlive())
+    {
+        StopCapitolAttack();
+        return;
+    }
+
+    const float Distance = FVector::Dist2D(
+        GetActorLocation(),
+        Building->GetActorLocation()
+    );
+
+    if (Distance > AttackRange)
+    {
+        StopCapitolAttack();
+        MoveToTarget();
+        return;
+    }
+
+    FDamageEvent DamageEvent(
+        UDamageType::StaticClass()
+    );
+
+    const float AppliedDamage = Building->TakeDamage(
+        Damage,
+        DamageEvent,
+        GetController(),
+        this
+    );
+
+    UE_LOG(LogTemp, Warning,
+        TEXT("[Swordsman] Capitol hit! Damage: %.1f"),
+        AppliedDamage
+    );
+
+    if (!IsValid(Building) || !Building->IsAlive())
+    {
+        UE_LOG(LogTemp, Warning,
+            TEXT("[Swordsman] Capitol destroyed!"));
+
+        StopCapitolAttack();
+    }
+}
+
+void AEnemySwordsmanAI::StopCapitolAttack()
+{
+    GetWorldTimerManager().ClearTimer(CapitolAttackTimer);
+    bAttackingCapitol = false;
+}
+
+// Existing wall logic
 void AEnemySwordsmanAI::OnObstacleDetected(AActor* Obstacle)
 {
     if (!IsValid(Obstacle))
@@ -18,14 +143,11 @@ void AEnemySwordsmanAI::OnObstacleDetected(AActor* Obstacle)
         return;
     }
 
-    // Останавливаем движение
+    StopCapitolAttack();
     StopMovement();
-
-    // Начинаем атаковать препятствие
     StartWallAttack(Obstacle);
 }
 
-// Начало атаки стены
 void AEnemySwordsmanAI::StartWallAttack(AActor* Wall)
 {
     if (!IsValid(Wall))
@@ -34,7 +156,6 @@ void AEnemySwordsmanAI::StartWallAttack(AActor* Wall)
     }
 
     StopWallAttack();
-
     TargetWall = Wall;
 
     GetWorldTimerManager().SetTimer(
@@ -46,7 +167,6 @@ void AEnemySwordsmanAI::StartWallAttack(AActor* Wall)
     );
 }
 
-// Один удар по стене
 void AEnemySwordsmanAI::AttackWall()
 {
     if (!IsValid(TargetWall))
@@ -55,23 +175,37 @@ void AEnemySwordsmanAI::AttackWall()
         return;
     }
 
-    // Здесь позднее вызовем систему получения урона стены.
-    // Например, через интерфейс разрушаемых объектов.
+    // Wall damage integration is a separate step.
 }
 
-// Остановка атаки
 void AEnemySwordsmanAI::StopWallAttack()
 {
     GetWorldTimerManager().ClearTimer(WallAttackTimer);
-
     TargetWall = nullptr;
 }
 
-// Стена разрушена
 void AEnemySwordsmanAI::OnWallDestroyed()
 {
     StopWallAttack();
-
-    // Повторно запрашиваем маршрут до Капитолия
     MoveToTarget();
+}
+
+void AEnemySwordsmanAI::Die()
+{
+    StopCapitolAttack();
+    StopWallAttack();
+
+    GetWorldTimerManager().ClearTimer(CapitolCheckTimer);
+
+    Super::Die();
+}
+
+void AEnemySwordsmanAI::EndPlay(
+    const EEndPlayReason::Type EndPlayReason)
+{
+    GetWorldTimerManager().ClearTimer(CapitolCheckTimer);
+    GetWorldTimerManager().ClearTimer(CapitolAttackTimer);
+    GetWorldTimerManager().ClearTimer(WallAttackTimer);
+
+    Super::EndPlay(EndPlayReason);
 }

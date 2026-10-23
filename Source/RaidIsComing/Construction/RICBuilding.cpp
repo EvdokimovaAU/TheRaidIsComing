@@ -1,3 +1,4 @@
+
 #include "RICBuilding.h"
 
 #include "Components/StaticMeshComponent.h"
@@ -18,18 +19,33 @@ ARICBuilding::ARICBuilding()
     SetCanBeDamaged(false);
 }
 
+
+bool ARICBuilding::IsDestructible() const
+{
+    return BuildingType == ERICBuildingType::Barrier ||
+        BuildingType == ERICBuildingType::Capitol;
+}
+
+
+bool ARICBuilding::IsAlive() const
+{
+    return IsDestructible() &&
+        CanBeDamaged() &&
+        !IsActorBeingDestroyed() &&
+        CurrentHP > 0.0f;
+}
+
 void ARICBuilding::BeginPlay()
 {
     Super::BeginPlay();
 
     BuildingId = FGuid::NewGuid();
 
-    const bool bIsBarrier =
-        BuildingType == ERICBuildingType::Barrier;
+    const bool bDestructible = IsDestructible();
 
-    SetCanBeDamaged(bIsBarrier);
+    SetCanBeDamaged(bDestructible);
 
-    if (bIsBarrier)
+    if (bDestructible)
     {
         if (!FMath::IsFinite(MaxHP) || MaxHP < 1.0f)
         {
@@ -46,60 +62,65 @@ void ARICBuilding::BeginPlay()
     UE_LOG(
         LogTemp,
         Log,
-        TEXT("Building initialized: %s. ID: %s. Destructible: %s. HP: %.1f"),
+        TEXT("[Building] Initialized: %s | Type: %d | Destructible: %s | HP: %.1f"),
         *GetName(),
-        *BuildingId.ToString(),
-        bIsBarrier ? TEXT("Yes") : TEXT("No"),
+        static_cast<int32>(BuildingType),
+        bDestructible ? TEXT("Yes") : TEXT("No"),
         CurrentHP
     );
 }
 
 float ARICBuilding::TakeDamage(
-	float DamageAmount,
-	const FDamageEvent& DamageEvent,
-	AController* EventInstigator,
-	AActor* DamageCauser)
+    float DamageAmount,
+    const FDamageEvent& DamageEvent,
+    AController* EventInstigator,
+    AActor* DamageCauser
+)
 {
-	// Башни и другие типы построек урон не получают.
-	if (BuildingType != ERICBuildingType::Barrier)
-	{
-		return 0.0f;
-	}
 
-	if (!CanBeDamaged() ||
-		IsActorBeingDestroyed() ||
-		CurrentHP <= 0.0f ||
-		!FMath::IsFinite(DamageAmount) ||
-		DamageAmount <= 0.0f)
-	{
-		return 0.0f;
-	}
+    if (!IsAlive() ||
+        !FMath::IsFinite(DamageAmount) ||
+        DamageAmount <= 0.0f)
+    {
+        return 0.0f;
+    }
 
-	const float AppliedDamage =
-		FMath::Min(DamageAmount, CurrentHP);
+    const float AppliedDamage =
+        FMath::Min(DamageAmount, CurrentHP);
 
-	CurrentHP = FMath::Max(0.0f, CurrentHP - AppliedDamage);
+    CurrentHP = FMath::Max(
+        0.0f,
+        CurrentHP - AppliedDamage
+    );
 
-	Super::TakeDamage(
-		AppliedDamage,
-		DamageEvent,
-		EventInstigator,
-		DamageCauser
-	);
+    Super::TakeDamage(
+        AppliedDamage,
+        DamageEvent,
+        EventInstigator,
+        DamageCauser
+    );
 
-	UE_LOG(
-		LogTemp,
-		Log,
-		TEXT("Barrier damaged: %s. Damage: %.1f. HP: %.1f"),
-		*GetName(),
-		AppliedDamage,
-		CurrentHP
-	);
+    UE_LOG(
+        LogTemp,
+        Warning,
+        TEXT("[Building] %s received %.1f damage | HP: %.1f / %.1f"),
+        *GetName(),
+        AppliedDamage,
+        CurrentHP,
+        MaxHP
+    );
 
-	if (CurrentHP <= 0.0f)
-	{
-		Destroy();
-	}
+    if (CurrentHP <= 0.0f)
+    {
+        UE_LOG(
+            LogTemp,
+            Warning,
+            TEXT("[Building] DESTROYED: %s"),
+            *GetName()
+        );
 
-	return AppliedDamage;
+        Destroy();
+    }
+
+    return AppliedDamage;
 }
