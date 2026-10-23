@@ -5,7 +5,13 @@
 #include "GameFramework/Actor.h"
 #include "WaveManager.generated.h"
 
-// Current wave state
+class ATargetPoint;
+
+
+// ==========================================
+// WAVE STATE
+// ==========================================
+
 UENUM(BlueprintType)
 enum class EWaveState : uint8
 {
@@ -15,27 +21,55 @@ enum class EWaveState : uint8
     Completed   UMETA(DisplayName = "Completed")
 };
 
-// Settings for one wave
+
+// ==========================================
+// ONE SPAWN GROUP
+// ==========================================
+
+USTRUCT(BlueprintType)
+struct FWaveSpawnGroup
+{
+    GENERATED_BODY()
+
+    // Spawn point placed on the level
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spawn Group")
+    TObjectPtr<ATargetPoint> SpawnPoint = nullptr;
+
+    // Enemies spawning from this specific point
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spawn Group",
+        meta = (ClampMin = "0"))
+    int32 SwordsmanCount = 0;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spawn Group",
+        meta = (ClampMin = "0"))
+    int32 ArcherCount = 0;
+};
+
+
+// ==========================================
+// ONE WAVE
+// ==========================================
+
 USTRUCT(BlueprintType)
 struct FWaveData
 {
     GENERATED_BODY()
 
-    // Number of swordsmen
+    // Each group has its own point and enemy counts
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Wave")
-    int32 SwordsmanCount = 5;
+    TArray<FWaveSpawnGroup> SpawnGroups;
 
-    // Number of archers
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Wave")
-    int32 ArcherCount = 2;
-
-    // Delay between enemy spawns
+    // Shared interval between spawn attempts
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Wave",
         meta = (ClampMin = "0.1"))
     float SpawnInterval = 1.5f;
 };
 
-// Events for other game systems
+
+// ==========================================
+// EVENTS
+// ==========================================
+
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
     FOnWaveStarted,
     int32,
@@ -52,6 +86,11 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE(
     FOnAllWavesCompleted
 );
 
+
+// ==========================================
+// WAVE MANAGER
+// ==========================================
+
 UCLASS()
 class RAIDISCOMING_API AWaveManager : public AActor
 {
@@ -61,27 +100,25 @@ public:
 
     AWaveManager();
 
-    // Wave configuration for this level
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Waves")
+    // Configure on the placed actor, because
+    // SpawnGroups reference TargetPoints from the level.
+    UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Waves")
     TArray<FWaveData> Waves;
 
-    // Current wave index (starts at -1)
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Waves")
     int32 CurrentWaveIndex = -1;
 
-    // Current state
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Waves")
     EWaveState WaveState = EWaveState::Waiting;
 
-    // Number of enemies still alive
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Waves")
     int32 AliveEnemies = 0;
 
-    // Have all enemies of this wave been spawned?
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Waves")
     bool bSpawningFinished = false;
 
-    // Events
+
+    // Events used by other game systems
     UPROPERTY(BlueprintAssignable, Category = "Waves|Events")
     FOnWaveStarted OnWaveStarted;
 
@@ -91,33 +128,30 @@ public:
     UPROPERTY(BlueprintAssignable, Category = "Waves|Events")
     FOnAllWavesCompleted OnAllWavesCompleted;
 
-    // Start next wave
+
     UFUNCTION(BlueprintCallable, Category = "Waves")
     void StartNextWave();
 
-    // Register spawned enemy
     UFUNCTION(BlueprintCallable, Category = "Waves")
     void RegisterEnemy();
 
-    // Called when enemy dies
     UFUNCTION(BlueprintCallable, Category = "Waves")
     void NotifyEnemyDied();
 
-    // Called when spawner finishes creating enemies
     UFUNCTION(BlueprintCallable, Category = "Waves")
     void FinishSpawning();
 
-    // Current wave number for UI
     UFUNCTION(BlueprintPure, Category = "Waves")
     int32 GetCurrentWaveNumber() const;
 
-    // Total wave count
     UFUNCTION(BlueprintPure, Category = "Waves")
     int32 GetTotalWaves() const;
+
 
 protected:
 
     virtual void BeginPlay() override;
+
 
 private:
 

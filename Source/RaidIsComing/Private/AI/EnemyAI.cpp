@@ -13,33 +13,33 @@
 #include "TimerManager.h"
 
 
-// КОНСТРУКТОР
+// ==========================================
+// CONSTRUCTOR
+// ==========================================
 
 AEnemyAI::AEnemyAI()
 {
     PrimaryActorTick.bCanEverTick = false;
 
-    // Контроллер ИИ
     AIControllerClass = AAIController::StaticClass();
 
     AutoPossessAI =
         EAutoPossessAI::PlacedInWorldOrSpawned;
 
-    // Начальная скорость
     GetCharacterMovement()->MaxWalkSpeed = 300.0f;
 }
 
 
-// НАЧАЛО ИГРЫ
+// ==========================================
+// BEGIN PLAY
+// ==========================================
 
 void AEnemyAI::BeginPlay()
 {
     Super::BeginPlay();
 
-    // Применяем скорость из Blueprint
     GetCharacterMovement()->MaxWalkSpeed = MovementSpeed;
 
-    // Назначаем капитолий
     if (IsValid(Capitol))
     {
         SetCapitol(Capitol.Get());
@@ -60,7 +60,9 @@ void AEnemyAI::BeginPlay()
 }
 
 
-// ОЖИДАНИЕ ГОТОВНОСТИ ИИ
+// ==========================================
+// WAIT FOR AI INITIALIZATION
+// ==========================================
 
 void AEnemyAI::TryStartMovement()
 {
@@ -73,7 +75,7 @@ void AEnemyAI::TryStartMovement()
         return;
     }
 
-    // Цель может быть назначена позже
+    // Target may be assigned after BeginPlay.
     if (!IsValid(CurrentTarget))
     {
         return;
@@ -82,7 +84,7 @@ void AEnemyAI::TryStartMovement()
     AAIController* EnemyController =
         Cast<AAIController>(GetController());
 
-    // Ожидаем получения контроллера
+    // Wait until the AIController possesses the enemy.
     if (!EnemyController)
     {
         return;
@@ -96,7 +98,9 @@ void AEnemyAI::TryStartMovement()
 }
 
 
-// НАЗНАЧЕНИЕ КАПИТОЛИЯ
+// ==========================================
+// ASSIGN CAPITOL
+// ==========================================
 
 void AEnemyAI::SetCapitol(AActor* NewCapitol)
 {
@@ -123,7 +127,9 @@ void AEnemyAI::SetCapitol(AActor* NewCapitol)
 }
 
 
-// ПОЛУЧЕНИЕ ТЕКУЩЕЙ ЦЕЛИ
+// ==========================================
+// GET CURRENT TARGET
+// ==========================================
 
 AActor* AEnemyAI::GetCurrentTarget() const
 {
@@ -131,7 +137,9 @@ AActor* AEnemyAI::GetCurrentTarget() const
 }
 
 
-// ПЕРЕМЕЩЕНИЕ К ЦЕЛИ
+// ==========================================
+// MOVE TO TARGET
+// ==========================================
 
 void AEnemyAI::MoveToTarget()
 {
@@ -151,7 +159,6 @@ void AEnemyAI::MoveToTarget()
         return;
     }
 
-    // Получаем систему навигации
     UNavigationSystemV1* NavSys =
         FNavigationSystem::GetCurrent<UNavigationSystemV1>(
             GetWorld()
@@ -171,7 +178,9 @@ void AEnemyAI::MoveToTarget()
         CurrentTarget->GetActorLocation();
 
 
-    // ПРОВЕРКА ПОЛОЖЕНИЯ ВРАГА
+    // ======================================
+    // PROJECT ENEMY ON NAVMESH
+    // ======================================
 
     FNavLocation EnemyNavLocation;
 
@@ -191,7 +200,9 @@ void AEnemyAI::MoveToTarget()
     }
 
 
-    // ПОИСК ДОСТУПНОЙ ТОЧКИ ОКОЛО ЦЕЛИ
+    // ======================================
+    // FIND NAVIGATION POINT NEAR TARGET
+    // ======================================
 
     FNavLocation TargetNavLocation;
 
@@ -216,7 +227,9 @@ void AEnemyAI::MoveToTarget()
     }
 
 
-    // ПРОВЕРКА МАРШРУТА
+    // ======================================
+    // CHECK PATH
+    // ======================================
 
     UNavigationPath* Path =
         NavSys->FindPathToLocationSynchronously(
@@ -237,7 +250,9 @@ void AEnemyAI::MoveToTarget()
     }
 
 
-    // ДИАГНОСТИКА
+    // ======================================
+    // DIAGNOSTICS
+    // ======================================
 
     UE_LOG(LogTemp, Warning,
         TEXT("========== ENEMY MOVEMENT =========="));
@@ -258,7 +273,6 @@ void AEnemyAI::MoveToTarget()
         TEXT("[EnemyAI] Movement speed: %.2f"),
         GetCharacterMovement()->MaxWalkSpeed);
 
-
     UE_LOG(LogTemp, Warning,
         TEXT("[EnemyAI] Enemy position: %s"),
         *GetActorLocation().ToString());
@@ -271,7 +285,10 @@ void AEnemyAI::MoveToTarget()
         TEXT("[EnemyAI] Navigation destination: %s"),
         *TargetNavLocation.Location.ToString());
 
-    // ЗАПУСК ПЕРЕМЕЩЕНИЯ
+
+    // ======================================
+    // START MOVEMENT
+    // ======================================
 
     const EPathFollowingRequestResult::Type Result =
         EnemyController->MoveToLocation(
@@ -294,14 +311,12 @@ void AEnemyAI::MoveToTarget()
 
         break;
 
-
     case EPathFollowingRequestResult::AlreadyAtGoal:
 
         UE_LOG(LogTemp, Warning,
             TEXT("[EnemyAI] Already at target"));
 
         break;
-
 
     case EPathFollowingRequestResult::Failed:
 
@@ -316,7 +331,9 @@ void AEnemyAI::MoveToTarget()
 }
 
 
-// ОСТАНОВКА ПЕРЕМЕЩЕНИЯ
+// ==========================================
+// STOP MOVEMENT
+// ==========================================
 
 void AEnemyAI::StopMovement()
 {
@@ -330,41 +347,54 @@ void AEnemyAI::StopMovement()
 }
 
 
-// ОБНАРУЖЕНИЕ ПРЕГРАДЫ
+// ==========================================
+// OBSTACLE DETECTION
+// ==========================================
 
 void AEnemyAI::OnObstacleDetected(AActor* Obstacle)
 {
-    // Базовая реализация пустая.
-    // Поведение реализуется в дочерних классах.
+    // Implemented by derived enemy classes.
 }
 
 
-// СМЕРТЬ ВРАГА
+// ==========================================
+// DEATH
+// ==========================================
 
 void AEnemyAI::Die()
 {
-    if (!IsAlive())
+    // HP may already be zero when Die() is called.
+    // Use bIsDead instead of IsAlive().
+    if (bIsDead)
     {
         return;
     }
 
-    // Останавливаем таймер
     GetWorldTimerManager().ClearTimer(
         MovementStartTimer
     );
 
-    // Прекращаем движение
     StopMovement();
 
-    // Вызываем базовую реализацию смерти
+    // AIBase marks the enemy as dead.
     Super::Die();
+
+    UE_LOG(LogTemp, Warning,
+        TEXT("[EnemyAI] Enemy died: %s"),
+        *GetName());
+
+    // Notify the spawner and any other subscribers.
+    OnEnemyDied.Broadcast(this);
 }
 
 
-// ЗАВЕРШЕНИЕ РАБОТЫ
+// ==========================================
+// END PLAY
+// ==========================================
 
 void AEnemyAI::EndPlay(
-    const EEndPlayReason::Type EndPlayReason)
+    const EEndPlayReason::Type EndPlayReason
+)
 {
     GetWorldTimerManager().ClearTimer(
         MovementStartTimer

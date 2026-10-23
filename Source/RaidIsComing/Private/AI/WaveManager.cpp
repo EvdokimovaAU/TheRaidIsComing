@@ -1,10 +1,12 @@
 
 #include "AI/WaveManager.h"
 
+
 AWaveManager::AWaveManager()
 {
     PrimaryActorTick.bCanEverTick = false;
 }
+
 
 void AWaveManager::BeginPlay()
 {
@@ -12,18 +14,21 @@ void AWaveManager::BeginPlay()
 
     UE_LOG(LogTemp, Warning,
         TEXT("[WaveManager] Initialized. Total waves: %d"),
-        Waves.Num()
-    );
+        Waves.Num());
 }
+
+
+// ==========================================
+// START NEXT WAVE
+// ==========================================
 
 void AWaveManager::StartNextWave()
 {
-    // Do not start another wave while current one is active
     if (WaveState == EWaveState::Spawning ||
         WaveState == EWaveState::InProgress)
     {
         UE_LOG(LogTemp, Warning,
-            TEXT("[WaveManager] Cannot start next wave: current wave is active"));
+            TEXT("[WaveManager] Current wave is still active"));
 
         return;
     }
@@ -33,9 +38,20 @@ void AWaveManager::StartNextWave()
     if (!Waves.IsValidIndex(NextIndex))
     {
         UE_LOG(LogTemp, Warning,
-            TEXT("[WaveManager] All waves completed"));
+            TEXT("[WaveManager] No more waves"));
 
         return;
+    }
+
+    const FWaveData& NextWave = Waves[NextIndex];
+
+    int32 TotalSwordsmen = 0;
+    int32 TotalArchers = 0;
+
+    for (const FWaveSpawnGroup& Group : NextWave.SpawnGroups)
+    {
+        TotalSwordsmen += FMath::Max(0, Group.SwordsmanCount);
+        TotalArchers += FMath::Max(0, Group.ArcherCount);
     }
 
     CurrentWaveIndex = NextIndex;
@@ -45,19 +61,20 @@ void AWaveManager::StartNextWave()
 
     WaveState = EWaveState::Spawning;
 
-    const FWaveData& CurrentWave = Waves[CurrentWaveIndex];
-
     UE_LOG(LogTemp, Warning,
-        TEXT("[WaveManager] Wave %d started. Swordsmen: %d | Archers: %d"),
+        TEXT("[WaveManager] Wave %d started. Swordsmen: %d | Archers: %d | Groups: %d"),
         GetCurrentWaveNumber(),
-        CurrentWave.SwordsmanCount,
-        CurrentWave.ArcherCount
-    );
+        TotalSwordsmen,
+        TotalArchers,
+        NextWave.SpawnGroups.Num());
 
     OnWaveStarted.Broadcast(GetCurrentWaveNumber());
-
-    // EnemySpawner will be connected here later
 }
+
+
+// ==========================================
+// REGISTER ENEMY
+// ==========================================
 
 void AWaveManager::RegisterEnemy()
 {
@@ -70,9 +87,13 @@ void AWaveManager::RegisterEnemy()
 
     UE_LOG(LogTemp, Log,
         TEXT("[WaveManager] Enemy registered. Alive: %d"),
-        AliveEnemies
-    );
+        AliveEnemies);
 }
+
+
+// ==========================================
+// ENEMY DIED
+// ==========================================
 
 void AWaveManager::NotifyEnemyDied()
 {
@@ -86,11 +107,15 @@ void AWaveManager::NotifyEnemyDied()
 
     UE_LOG(LogTemp, Warning,
         TEXT("[WaveManager] Enemy died. Remaining: %d"),
-        AliveEnemies
-    );
+        AliveEnemies);
 
     CheckWaveCompletion();
 }
+
+
+// ==========================================
+// FINISH SPAWNING
+// ==========================================
 
 void AWaveManager::FinishSpawning()
 {
@@ -105,11 +130,15 @@ void AWaveManager::FinishSpawning()
 
     UE_LOG(LogTemp, Warning,
         TEXT("[WaveManager] Spawning finished. Alive enemies: %d"),
-        AliveEnemies
-    );
+        AliveEnemies);
 
     CheckWaveCompletion();
 }
+
+
+// ==========================================
+// CHECK COMPLETION
+// ==========================================
 
 void AWaveManager::CheckWaveCompletion()
 {
@@ -127,12 +156,10 @@ void AWaveManager::CheckWaveCompletion()
 
     UE_LOG(LogTemp, Warning,
         TEXT("[WaveManager] Wave %d completed!"),
-        GetCurrentWaveNumber()
-    );
+        GetCurrentWaveNumber());
 
     OnWaveCompleted.Broadcast(GetCurrentWaveNumber());
 
-    // Check if this was the last wave
     if (CurrentWaveIndex == Waves.Num() - 1)
     {
         UE_LOG(LogTemp, Warning,
@@ -142,10 +169,16 @@ void AWaveManager::CheckWaveCompletion()
     }
 }
 
+
+// ==========================================
+// GETTERS
+// ==========================================
+
 int32 AWaveManager::GetCurrentWaveNumber() const
 {
     return CurrentWaveIndex + 1;
 }
+
 
 int32 AWaveManager::GetTotalWaves() const
 {
