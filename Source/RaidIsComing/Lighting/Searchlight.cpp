@@ -4,6 +4,147 @@
 #include "Components/SceneComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/SpotLightComponent.h"
+#include "Components/PrimitiveComponent.h"
+#include "Components/MeshComponent.h"
+#include "Components/ShapeComponent.h"
+
+namespace SearchlightGeometry
+{
+    // All coordinates are relative to the light and divided by its range.
+    // The light volume is a circular cone intersected with a unit sphere:
+    // attenuation distance is radial, not distance along the cone axis.
+    struct FBox
+    {
+        FVector Center;
+        FVector HalfAxes[3];
+    };
+
+    FVector BoxSupport(const FBox& Box, const FVector& Direction)
+    {
+        FVector Result = Box.Center;
+        for (int32 I = 0; I < 3; ++I)
+        {
+            Result += Box.HalfAxes[I] *
+                (FVector::DotProduct(Box.HalfAxes[I], Direction) >= 0.0 ? 1.0 : -1.0);
+        }
+        return Result;
+    }
+
+    FVector LightSupport(const FVector& Direction, const FVector& Axis,
+        double CosAngle, double SinAngle)
+    {
+        const double Length = Direction.Size();
+        if (Length < 1.e-15) return FVector::ZeroVector;
+        const double Axial = FVector::DotProduct(Direction, Axis);
+        if (Axial >= Length * CosAngle) return Direction / Length;
+        const FVector Radial = Direction - Axis * Axial;
+        const double RadialLength = Radial.Size();
+        if (RadialLength < 1.e-15) return FVector::ZeroVector;
+        const FVector Rim = Axis * CosAngle + Radial * (SinAngle / RadialLength);
+        return FVector::DotProduct(Rim, Direction) > 0.0 ? Rim : FVector::ZeroVector;
+    }
+
+    // Closest point to the origin on a simplex (up to 4 vertices).
+    // Enumerate its faces and solve barycentric coordinates. Degenerate faces
+    // fall back to their edges/vertices, including for flat object bounds.
+    FVector ReduceSimplex(FVector* Points, int32& Count)
+    {
+        double BestDistance = 1.e300;
+        FVector Best = Points[0];
+        int32 BestIndices[4] = { 0, 0, 0, 0 };
+        int32 BestCount = 1;
+        for (int32 Mask = 1; Mask < (1 << Count); ++Mask)
+        {
+            int32 Indices[4];
+            int32 N = 0;
+            for (int32 I = 0; I < Count; ++I)
+                if (Mask & (1 << I)) Indices[N++] = I;
+            const FVector Base = Points[Indices[0]];
+            FVector Edges[3];
+            double Matrix[3][4] = {};
+            const int32 Dim = N - 1;
+            for (int32 I = 0; I < Dim; ++I) Edges[I] = Points[Indices[I + 1]] - Base;
+            for (int32 I = 0; I < Dim; ++I)
+            {
+                for (int32 J = 0; J < Dim; ++J)
+                    Matrix[I][J] = FVector::DotProduct(Edges[I], Edges[J]);
+                Matrix[I][Dim] = -FVector::DotProduct(Edges[I], Base);
+            }
+            bool bValid = true;
+            for (int32 Col = 0; Col < Dim; ++Col)
+            {
+                int32 Pivot = Col;
+                for (int32 Row = Col + 1; Row < Dim; ++Row)
+                    if (FMath::Abs(Matrix[Row][Col]) > FMath::Abs(Matrix[Pivot][Col])) Pivot = Row;
+                if (FMath::Abs(Matrix[Pivot][Col]) < 1.e-20) { bValid = false; break; }
+                for (int32 J = Col; J <= Dim; ++J) Swap(Matrix[Col][J], Matrix[Pivot][J]);
+                const double Divisor = Matrix[Col][Col];
+                for (int32 J = Col; J <= Dim; ++J) Matrix[Col][J] /= Divisor;
+                for (int32 Row = 0; Row < Dim; ++Row)
+                {
+                    if (Row == Col) continue;
+                    const double Factor = Matrix[Row][Col];
+                    for (int32 J = Col; J <= Dim; ++J) Matrix[Row][J] -= Factor * Matrix[Col][J];
+                }
+            }
+            if (!bValid) continue;
+            double BaseWeight = 1.0;
+            FVector Candidate = Base;
+            for (int32 I = 0; I < Dim; ++I)
+            {
+                const double Weight = Matrix[I][Dim];
+                if (Weight < 0.0) bValid = false;
+                BaseWeight -= Weight;
+                Candidate += Edges[I] * Weight;
+            }
+            if (!bValid || BaseWeight < 0.0) continue;
+            const double Distance = Candidate.SizeSquared();
+            if (Distance < BestDistance)
+            {
+                BestDistance = Distance;
+                Best = Candidate;
+                BestCount = N;
+                for (int32 I = 0; I < N; ++I) BestIndices[I] = Indices[I];
+            }
+        }
+        FVector Reduced[4];
+        for (int32 I = 0; I < BestCount; ++I) Reduced[I] = Points[BestIndices[I]];
+        Count = BestCount;
+        for (int32 I = 0; I < Count; ++I) Points[I] = Reduced[I];
+        return Best;
+    }
+
+    bool Intersects(const FBox& Box, const FVector& Axis, double CosAngle,
+        double SinAngle, double Tolerance)
+    {
+        const auto Support = [&](const FVector& Direction)
+            {
+                return BoxSupport(Box, Direction) - LightSupport(-Direction, Axis, CosAngle, SinAngle);
+            };
+        FVector Points[4];
+        int32 Count = 1;
+        Points[0] = Support(Axis);
+        FVector Closest = Points[0];
+        // GJK distance query; no corner sampling, so a cone crossing a face
+        // is detected even when none of the box's corners are inside it.
+        for (int32 Iteration = 0; Iteration < 128; ++Iteration)
+        {
+            const double Distance = Closest.Size();
+            if (Distance <= Tolerance) return true;
+            const FVector Direction = -Closest / Distance;
+            const FVector Next = Support(Direction);
+            // A separating plane proves the entire box is outside.
+            if (FVector::DotProduct(Next, Direction) < -Tolerance) return false;
+            bool bDuplicate = false;
+            for (int32 I = 0; I < Count; ++I)
+                if ((Next - Points[I]).SizeSquared() < 1.e-28) bDuplicate = true;
+            if (bDuplicate || Count == 4) return false;
+            Points[Count++] = Next;
+            Closest = ReduceSimplex(Points, Count);
+        }
+        return Closest.SizeSquared() <= Tolerance * Tolerance;
+    }
+}
 
 ASearchlight::ASearchlight()
 {
@@ -120,4 +261,61 @@ void ASearchlight::Tick(float DeltaSeconds)
             DeltaSeconds, FMath::Max(1.0f, RotationSpeed));
         SpotLight->SetWorldRotation(Rotation);
     }
+}
+
+
+bool ASearchlight::IsActorIlluminated(const AActor* TargetActor) const
+{
+    if (!IsLightActive() || !IsValid(TargetActor) || TargetActor == this
+        || TargetActor->IsActorBeingDestroyed() || !SpotLight->bAffectsWorld)
+    {
+        return false;
+    }
+
+    const double Range = SpotLight->AttenuationRadius;
+    const double Angle = SpotLight->OuterConeAngle;
+    if (!FMath::IsFinite(Range) || Range <= 0.0
+        || !FMath::IsFinite(Angle) || Angle <= 0.0 || Angle >= 90.0)
+    {
+        return false;
+    }
+    const FVector Origin = SpotLight->GetComponentLocation();
+    const FVector Axis = SpotLight->GetForwardVector().GetSafeNormal();
+    if (Origin.ContainsNaN() || Axis.ContainsNaN() || Axis.IsNearlyZero()) return false;
+    const double Radians = FMath::DegreesToRadians(Angle);
+    const double CosAngle = FMath::Cos(Radians);
+    const double SinAngle = FMath::Sin(Radians);
+    // Contact tolerance: 0.01 cm in world space.
+    const double Tolerance = 0.01 / Range;
+
+    TInlineComponentArray<UPrimitiveComponent*> Components;
+    TargetActor->GetComponents(Components);
+    static const FName IgnoreTag(TEXT("IgnoreSearchlight"));
+    for (const UPrimitiveComponent* Component : Components)
+    {
+        if (!IsValid(Component) || !Component->IsRegistered()
+            || Component->ComponentHasTag(IgnoreTag)) continue;
+        // Ignore particles, decals and editor helper primitives.
+        // Meshes work without collision. Shape components require collision.
+        if (!Cast<UMeshComponent>(Component)
+            && !(Cast<UShapeComponent>(Component) && Component->IsCollisionEnabled())) continue;
+
+        const FTransform Transform = Component->GetComponentTransform();
+        if (Transform.ContainsNaN()) continue;
+        const FBoxSphereBounds LocalBounds = Component->CalcBounds(FTransform::Identity);
+        const FVector Extent = LocalBounds.BoxExtent;
+        if (LocalBounds.Origin.ContainsNaN() || Extent.ContainsNaN()
+            || Extent.GetMin() < 0.0 || Extent.IsNearlyZero()) continue;
+
+        SearchlightGeometry::FBox Box;
+        Box.Center = (Transform.TransformPosition(LocalBounds.Origin) - Origin) / Range;
+        Box.HalfAxes[0] = Transform.TransformVector(FVector(Extent.X, 0.0, 0.0)) / Range;
+        Box.HalfAxes[1] = Transform.TransformVector(FVector(0.0, Extent.Y, 0.0)) / Range;
+        Box.HalfAxes[2] = Transform.TransformVector(FVector(0.0, 0.0, Extent.Z)) / Range;
+        if (Box.Center.ContainsNaN() || Box.HalfAxes[0].ContainsNaN()
+            || Box.HalfAxes[1].ContainsNaN() || Box.HalfAxes[2].ContainsNaN()) continue;
+
+        if (SearchlightGeometry::Intersects(Box, Axis, CosAngle, SinAngle, Tolerance)) return true;
+    }
+    return false;
 }

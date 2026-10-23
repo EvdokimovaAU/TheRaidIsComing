@@ -29,6 +29,12 @@ public:
     UFUNCTION(BlueprintPure, Category = "Searchlight")
     bool IsLightActive() const;
 
+    // Пересечение конуса с ориентированными bounds компонентов объекта.
+    // Bounds являются приближением формы меша; тени/препятствия не учитываются.
+    // Компоненты с тегом IgnoreSearchlight исключаются (например, триггеры).
+    UFUNCTION(BlueprintPure, Category = "Searchlight")
+    bool IsActorIlluminated(const AActor* TargetActor) const;
+
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Searchlight")
     TObjectPtr<USceneComponent> SceneRoot;
 
