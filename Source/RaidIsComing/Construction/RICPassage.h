@@ -9,6 +9,44 @@ class UStaticMeshComponent;
 class UMaterialInterface;
 class UArrowComponent;
 class ARICBuilding;
+class ARICPassage;
+
+// Снимок данных на момент запроса. После изменения мира запросить заново.
+USTRUCT(BlueprintType)
+struct RAIDISCOMING_API FRICPassageData
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "Passage")
+	TObjectPtr<ARICPassage> Passage = nullptr;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Passage")
+	FGuid PassageId;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Passage")
+	int32 RingId = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Passage")
+	FVector PassageLocation = FVector::ZeroVector;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Passage")
+	bool bIsOpen = true;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Passage")
+	TObjectPtr<ARICBuilding> Barrier = nullptr;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Passage")
+	FGuid BarrierId;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Passage")
+	FVector BarrierLocation = FVector::ZeroVector;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Passage")
+	float BarrierHP = 0.0f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Passage")
+	float BarrierMaxHP = 0.0f;
+};
 
 UCLASS()
 class RAIDISCOMING_API ARICPassage : public AActor
@@ -20,32 +58,40 @@ public:
 
 	virtual void OnConstruction(const FTransform& Transform) override;
 
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Passage")
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Passage")
 	TObjectPtr<UBoxComponent> PassageBounds;
 
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Passage")
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Passage")
 	TObjectPtr<UArrowComponent> DirectionArrow;
 
-	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category="Passage")
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Passage")
 	FGuid PassageId;
 
 	// У проходов одного кольца должно быть одинаковое значение.
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Passage",
-		meta=(ClampMin="0"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Passage",
+		meta = (ClampMin = "0"))
 	int32 RingId = 0;
 
 	// Половина размера места под преграду.
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Passage",
-		meta=(ClampMin="1"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Passage",
+		meta = (ClampMin = "1"))
 	FVector HalfSize = FVector(100.0f, 150.0f, 100.0f);
 
-	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category="Passage")
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Passage")
 	TObjectPtr<ARICBuilding> InstalledBarrier;
 
-	UFUNCTION(BlueprintPure, Category="Passage")
+	UFUNCTION(BlueprintPure, Category = "Passage")
 	bool IsOpen() const;
 
-	UFUNCTION(BlueprintCallable, Category="Passage")
+	// Возвращает только существующую и не уничтожающуюся преграду.
+	UFUNCTION(BlueprintPure, Category = "Passage|AI")
+	ARICBuilding* GetInstalledBarrier() const;
+
+	UFUNCTION(BlueprintPure, Category = "Passage|AI")
+	FRICPassageData GetPassageData() const;
+
+
+	UFUNCTION(BlueprintCallable, Category = "Passage")
 	bool RegisterBarrier(ARICBuilding* Barrier);
 	// Плоскость, показывающая место установки преграды.
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Passage|Highlight")
