@@ -4,6 +4,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "TimerManager.h"
+
 #include "EnemySpawner.generated.h"
 
 class AWaveManager;
@@ -11,7 +12,10 @@ class AEnemyAI;
 class ATargetPoint;
 
 
-// Runtime state for one spawn group
+// ==========================================
+// ACTIVE SPAWN GROUP
+// ==========================================
+
 struct FActiveSpawnGroup
 {
     TWeakObjectPtr<ATargetPoint> SpawnPoint;
@@ -27,6 +31,10 @@ struct FActiveSpawnGroup
 };
 
 
+// ==========================================
+// ENEMY SPAWNER
+// ==========================================
+
 UCLASS()
 class RAIDISCOMING_API AEnemySpawner : public AActor
 {
@@ -36,7 +44,6 @@ public:
 
     AEnemySpawner();
 
-
 protected:
 
     virtual void BeginPlay() override;
@@ -44,7 +51,6 @@ protected:
     virtual void EndPlay(
         const EEndPlayReason::Type EndPlayReason
     ) override;
-
 
     // ======================================
     // LEVEL REFERENCES
@@ -56,7 +62,6 @@ protected:
     UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Spawner")
     TObjectPtr<AActor> Capitol = nullptr;
 
-
     // ======================================
     // ENEMY CLASSES
     // ======================================
@@ -67,32 +72,46 @@ protected:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Spawner|Enemies")
     TSubclassOf<AEnemyAI> ArcherClass;
 
-
     // ======================================
     // SPAWN PLACEMENT
     // ======================================
 
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Spawner|Placement",
-        meta = (ClampMin = "0.0"))
+    UPROPERTY(
+        EditAnywhere,
+        BlueprintReadOnly,
+        Category = "Spawner|Placement",
+        meta = (ClampMin = "0.0")
+    )
     float MinimumSpawnDistance = 150.0f;
 
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Spawner|Placement",
-        meta = (ClampMin = "0.0"))
+    UPROPERTY(
+        EditAnywhere,
+        BlueprintReadOnly,
+        Category = "Spawner|Placement",
+        meta = (ClampMin = "0.0")
+    )
     float SpawnSearchRadius = 400.0f;
 
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Spawner|Placement",
-        meta = (ClampMin = "1"))
+    UPROPERTY(
+        EditAnywhere,
+        BlueprintReadOnly,
+        Category = "Spawner|Placement",
+        meta = (ClampMin = "1")
+    )
     int32 MaxSpawnAttempts = 24;
 
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Spawner|Placement",
-        meta = (ClampMin = "0.1"))
+    UPROPERTY(
+        EditAnywhere,
+        BlueprintReadOnly,
+        Category = "Spawner|Placement",
+        meta = (ClampMin = "0.1")
+    )
     float RetryInterval = 0.5f;
-
 
 private:
 
     // ======================================
-    // WAVE EVENTS
+    // EVENTS
     // ======================================
 
     UFUNCTION()
@@ -100,7 +119,6 @@ private:
 
     UFUNCTION()
     void HandleEnemyDied(AEnemyAI* DeadEnemy);
-
 
     // ======================================
     // SPAWNING
@@ -124,14 +142,12 @@ private:
 
     void CompleteSpawning();
 
-
     // ======================================
     // RUNTIME DATA
     // ======================================
 
     TArray<FActiveSpawnGroup> ActiveGroups;
 
-    // Only enemies registered by this spawner.
     TSet<TWeakObjectPtr<AEnemyAI>> RegisteredEnemies;
 
     FTimerHandle SpawnTimer;

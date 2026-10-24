@@ -9,7 +9,6 @@
 #include "EngineUtils.h"
 
 #include "NavigationSystem.h"
-
 #include "Components/CapsuleComponent.h"
 
 
@@ -33,16 +32,22 @@ void AEnemySpawner::BeginPlay()
 
     if (!IsValid(WaveManager))
     {
-        UE_LOG(LogTemp, Error,
-            TEXT("[EnemySpawner] WaveManager is not assigned!"));
+        UE_LOG(
+            LogTemp,
+            Error,
+            TEXT("[EnemySpawner] WaveManager is not assigned!")
+        );
 
         return;
     }
 
     if (!IsValid(Capitol))
     {
-        UE_LOG(LogTemp, Error,
-            TEXT("[EnemySpawner] Capitol is not assigned!"));
+        UE_LOG(
+            LogTemp,
+            Error,
+            TEXT("[EnemySpawner] Capitol is not assigned!")
+        );
 
         return;
     }
@@ -52,8 +57,11 @@ void AEnemySpawner::BeginPlay()
         &AEnemySpawner::HandleWaveStarted
     );
 
-    UE_LOG(LogTemp, Warning,
-        TEXT("[EnemySpawner] Connected to WaveManager"));
+    UE_LOG(
+        LogTemp,
+        Warning,
+        TEXT("[EnemySpawner] Connected to WaveManager")
+    );
 }
 
 
@@ -72,9 +80,12 @@ void AEnemySpawner::HandleWaveStarted(int32 WaveNumber)
 
     if (!WaveManager->Waves.IsValidIndex(WaveIndex))
     {
-        UE_LOG(LogTemp, Error,
+        UE_LOG(
+            LogTemp,
+            Error,
             TEXT("[EnemySpawner] Invalid wave index: %d"),
-            WaveIndex);
+            WaveIndex
+        );
 
         return;
     }
@@ -82,7 +93,7 @@ void AEnemySpawner::HandleWaveStarted(int32 WaveNumber)
     const FWaveData& WaveData =
         WaveManager->Waves[WaveIndex];
 
-    // Validate configuration before starting.
+    // Validate all groups before starting.
     for (const FWaveSpawnGroup& Group : WaveData.SpawnGroups)
     {
         const int32 Swordsmen =
@@ -98,9 +109,12 @@ void AEnemySpawner::HandleWaveStarted(int32 WaveNumber)
 
         if (!IsValid(Group.SpawnPoint))
         {
-            UE_LOG(LogTemp, Error,
+            UE_LOG(
+                LogTemp,
+                Error,
                 TEXT("[EnemySpawner] Invalid SpawnPoint in wave %d"),
-                WaveNumber);
+                WaveNumber
+            );
 
             return;
         }
@@ -108,9 +122,12 @@ void AEnemySpawner::HandleWaveStarted(int32 WaveNumber)
         if ((Swordsmen > 0 && !SwordsmanClass) ||
             (Archers > 0 && !ArcherClass))
         {
-            UE_LOG(LogTemp, Error,
+            UE_LOG(
+                LogTemp,
+                Error,
                 TEXT("[EnemySpawner] Missing enemy class in wave %d"),
-                WaveNumber);
+                WaveNumber
+            );
 
             return;
         }
@@ -118,8 +135,11 @@ void AEnemySpawner::HandleWaveStarted(int32 WaveNumber)
 
     if (!IsValid(Capitol))
     {
-        UE_LOG(LogTemp, Error,
-            TEXT("[EnemySpawner] Capitol is invalid!"));
+        UE_LOG(
+            LogTemp,
+            Error,
+            TEXT("[EnemySpawner] Capitol is invalid!")
+        );
 
         return;
     }
@@ -153,10 +173,13 @@ void AEnemySpawner::HandleWaveStarted(int32 WaveNumber)
 
     bIsSpawning = true;
 
-    UE_LOG(LogTemp, Warning,
+    UE_LOG(
+        LogTemp,
+        Warning,
         TEXT("[EnemySpawner] Wave %d started. Active groups: %d"),
         WaveNumber,
-        ActiveGroups.Num());
+        ActiveGroups.Num()
+    );
 
     SpawnNextEnemy();
 }
@@ -181,7 +204,7 @@ bool AEnemySpawner::HasPendingEnemies() const
 
 
 // ==========================================
-// CHECK DISTANCE
+// CHECK DISTANCE FROM EXISTING ENEMIES
 // ==========================================
 
 bool AEnemySpawner::IsFarEnoughFromEnemies(
@@ -234,8 +257,11 @@ bool AEnemySpawner::FindFreeSpawnLocation(
 
     if (!NavSys)
     {
-        UE_LOG(LogTemp, Error,
-            TEXT("[EnemySpawner] NavigationSystem not found"));
+        UE_LOG(
+            LogTemp,
+            Error,
+            TEXT("[EnemySpawner] NavigationSystem not found")
+        );
 
         return false;
     }
@@ -369,8 +395,7 @@ bool AEnemySpawner::TrySpawnFromGroup(
         return false;
     }
 
-    ATargetPoint* Point =
-        Group.SpawnPoint.Get();
+    ATargetPoint* Point = Group.SpawnPoint.Get();
 
     if (!IsValid(Point) ||
         !IsValid(Capitol) ||
@@ -421,7 +446,7 @@ bool AEnemySpawner::TrySpawnFromGroup(
         return false;
     }
 
-    // Successful spawn: update this group's remaining count.
+    // Successful spawn.
     if (bSpawnSwordsman)
     {
         --Group.RemainingSwordsmen;
@@ -431,22 +456,26 @@ bool AEnemySpawner::TrySpawnFromGroup(
         --Group.RemainingArchers;
     }
 
-    // Track this specific enemy to avoid duplicate notifications.
-    RegisteredEnemies.Add(Enemy);
+    // Register this specific enemy.
+    RegisteredEnemies.Add(
+        TWeakObjectPtr<AEnemyAI>(Enemy)
+    );
 
-    // Subscribe before initializing enemy movement.
+    // Subscribe to death before starting movement.
     Enemy->OnEnemyDied.AddUniqueDynamic(
         this,
         &AEnemySpawner::HandleEnemyDied
     );
 
-    // Register in the shared wave counter.
+    // Increase the shared wave counter.
     WaveManager->RegisterEnemy();
 
-    // Assign Capitol. Existing EnemyAI starts movement.
+    // Assign the Capitol.
     Enemy->SetCapitol(Capitol.Get());
 
-    UE_LOG(LogTemp, Warning,
+    UE_LOG(
+        LogTemp,
+        Warning,
         TEXT("[EnemySpawner] Spawned %s at %s. Remaining at point: %d"),
         *Enemy->GetName(),
         *Point->GetName(),
@@ -515,8 +544,11 @@ void AEnemySpawner::SpawnNextEnemy()
 
     if (!bSpawnSuccessful)
     {
-        UE_LOG(LogTemp, Warning,
-            TEXT("[EnemySpawner] Spawn points blocked. Retrying..."));
+        UE_LOG(
+            LogTemp,
+            Warning,
+            TEXT("[EnemySpawner] Spawn points blocked. Retrying...")
+        );
     }
 
     GetWorldTimerManager().SetTimer(
@@ -542,7 +574,7 @@ void AEnemySpawner::HandleEnemyDied(
         return;
     }
 
-    // Only count deaths of enemies registered by this spawner.
+    // A death is counted only once.
     if (RegisteredEnemies.Remove(
         TWeakObjectPtr<AEnemyAI>(DeadEnemy)
     ) == 0)
@@ -555,9 +587,12 @@ void AEnemySpawner::HandleEnemyDied(
         &AEnemySpawner::HandleEnemyDied
     );
 
-    UE_LOG(LogTemp, Warning,
+    UE_LOG(
+        LogTemp,
+        Warning,
         TEXT("[EnemySpawner] Enemy death received: %s"),
-        *DeadEnemy->GetName());
+        *DeadEnemy->GetName()
+    );
 
     if (IsValid(WaveManager))
     {
@@ -581,8 +616,11 @@ void AEnemySpawner::CompleteSpawning()
 
     bIsSpawning = false;
 
-    UE_LOG(LogTemp, Warning,
-        TEXT("[EnemySpawner] All configured enemies spawned"));
+    UE_LOG(
+        LogTemp,
+        Warning,
+        TEXT("[EnemySpawner] All configured enemies spawned")
+    );
 
     if (IsValid(WaveManager))
     {
