@@ -9,6 +9,9 @@
 
 #include "GameFramework/CharacterMovementComponent.h"
 
+#include "Components/CapsuleComponent.h"
+#include "Components/SkeletalMeshComponent.h"
+
 #include "Engine/World.h"
 #include "TimerManager.h"
 
@@ -106,8 +109,11 @@ void AEnemyAI::SetCapitol(AActor* NewCapitol)
 {
     if (!IsValid(NewCapitol) || NewCapitol == this)
     {
-        UE_LOG(LogTemp, Warning,
-            TEXT("[EnemyAI] Invalid Capitol"));
+        UE_LOG(
+            LogTemp,
+            Warning,
+            TEXT("[EnemyAI] Invalid Capitol")
+        );
 
         return;
     }
@@ -115,10 +121,13 @@ void AEnemyAI::SetCapitol(AActor* NewCapitol)
     Capitol = NewCapitol;
     CurrentTarget = NewCapitol;
 
-    UE_LOG(LogTemp, Log,
+    UE_LOG(
+        LogTemp,
+        Log,
         TEXT("[EnemyAI] %s: Capitol assigned: %s"),
         *GetName(),
-        *NewCapitol->GetName());
+        *NewCapitol->GetName()
+    );
 
     if (bAutoStartMovement && HasActorBegunPlay())
     {
@@ -153,8 +162,11 @@ void AEnemyAI::MoveToTarget()
 
     if (!EnemyController)
     {
-        UE_LOG(LogTemp, Error,
-            TEXT("[EnemyAI] AIController not found"));
+        UE_LOG(
+            LogTemp,
+            Error,
+            TEXT("[EnemyAI] AIController not found")
+        );
 
         return;
     }
@@ -166,13 +178,17 @@ void AEnemyAI::MoveToTarget()
 
     if (!NavSys)
     {
-        UE_LOG(LogTemp, Error,
-            TEXT("[EnemyAI] NavigationSystem not found"));
+        UE_LOG(
+            LogTemp,
+            Error,
+            TEXT("[EnemyAI] NavigationSystem not found")
+        );
 
         return;
     }
 
-    const FVector EnemyLocation = GetActorLocation();
+    const FVector EnemyLocation =
+        GetActorLocation();
 
     const FVector TargetLocation =
         CurrentTarget->GetActorLocation();
@@ -193,8 +209,11 @@ void AEnemyAI::MoveToTarget()
 
     if (!bEnemyOnNavMesh)
     {
-        UE_LOG(LogTemp, Error,
-            TEXT("[EnemyAI] Enemy is outside NavMesh"));
+        UE_LOG(
+            LogTemp,
+            Error,
+            TEXT("[EnemyAI] Enemy is outside NavMesh")
+        );
 
         return;
     }
@@ -219,9 +238,12 @@ void AEnemyAI::MoveToTarget()
 
     if (!bTargetOnNavMesh)
     {
-        UE_LOG(LogTemp, Error,
+        UE_LOG(
+            LogTemp,
+            Error,
             TEXT("[EnemyAI] No NavMesh near target: %s"),
-            *CurrentTarget->GetName());
+            *CurrentTarget->GetName()
+        );
 
         return;
     }
@@ -243,8 +265,11 @@ void AEnemyAI::MoveToTarget()
         !Path->IsValid() ||
         Path->IsPartial())
     {
-        UE_LOG(LogTemp, Warning,
-            TEXT("[EnemyAI] Complete path not found"));
+        UE_LOG(
+            LogTemp,
+            Warning,
+            TEXT("[EnemyAI] Complete path not found")
+        );
 
         return;
     }
@@ -254,36 +279,60 @@ void AEnemyAI::MoveToTarget()
     // DIAGNOSTICS
     // ======================================
 
-    UE_LOG(LogTemp, Warning,
-        TEXT("========== ENEMY MOVEMENT =========="));
+    UE_LOG(
+        LogTemp,
+        Warning,
+        TEXT("========== ENEMY MOVEMENT ==========")
+    );
 
-    UE_LOG(LogTemp, Warning,
+    UE_LOG(
+        LogTemp,
+        Warning,
         TEXT("[EnemyAI] Enemy: %s"),
-        *GetName());
+        *GetName()
+    );
 
-    UE_LOG(LogTemp, Warning,
+    UE_LOG(
+        LogTemp,
+        Warning,
         TEXT("[EnemyAI] Target: %s"),
-        *CurrentTarget->GetName());
+        *CurrentTarget->GetName()
+    );
 
-    UE_LOG(LogTemp, Warning,
+    UE_LOG(
+        LogTemp,
+        Warning,
         TEXT("[EnemyAI] Destination: %s"),
-        *TargetNavLocation.Location.ToString());
+        *TargetNavLocation.Location.ToString()
+    );
 
-    UE_LOG(LogTemp, Warning,
+    UE_LOG(
+        LogTemp,
+        Warning,
         TEXT("[EnemyAI] Movement speed: %.2f"),
-        GetCharacterMovement()->MaxWalkSpeed);
+        GetCharacterMovement()->MaxWalkSpeed
+    );
 
-    UE_LOG(LogTemp, Warning,
+    UE_LOG(
+        LogTemp,
+        Warning,
         TEXT("[EnemyAI] Enemy position: %s"),
-        *GetActorLocation().ToString());
+        *GetActorLocation().ToString()
+    );
 
-    UE_LOG(LogTemp, Warning,
+    UE_LOG(
+        LogTemp,
+        Warning,
         TEXT("[EnemyAI] Capitol position: %s"),
-        *CurrentTarget->GetActorLocation().ToString());
+        *CurrentTarget->GetActorLocation().ToString()
+    );
 
-    UE_LOG(LogTemp, Warning,
+    UE_LOG(
+        LogTemp,
+        Warning,
         TEXT("[EnemyAI] Navigation destination: %s"),
-        *TargetNavLocation.Location.ToString());
+        *TargetNavLocation.Location.ToString()
+    );
 
 
     // ======================================
@@ -306,28 +355,40 @@ void AEnemyAI::MoveToTarget()
     {
     case EPathFollowingRequestResult::RequestSuccessful:
 
-        UE_LOG(LogTemp, Warning,
-            TEXT("[EnemyAI] Movement started"));
+        UE_LOG(
+            LogTemp,
+            Warning,
+            TEXT("[EnemyAI] Movement started")
+        );
 
         break;
 
     case EPathFollowingRequestResult::AlreadyAtGoal:
 
-        UE_LOG(LogTemp, Warning,
-            TEXT("[EnemyAI] Already at target"));
+        UE_LOG(
+            LogTemp,
+            Warning,
+            TEXT("[EnemyAI] Already at target")
+        );
 
         break;
 
     case EPathFollowingRequestResult::Failed:
 
-        UE_LOG(LogTemp, Error,
-            TEXT("[EnemyAI] Movement FAILED"));
+        UE_LOG(
+            LogTemp,
+            Error,
+            TEXT("[EnemyAI] Movement FAILED")
+        );
 
         break;
     }
 
-    UE_LOG(LogTemp, Warning,
-        TEXT("===================================="));
+    UE_LOG(
+        LogTemp,
+        Warning,
+        TEXT("====================================")
+    );
 }
 
 
@@ -363,28 +424,66 @@ void AEnemyAI::OnObstacleDetected(AActor* Obstacle)
 
 void AEnemyAI::Die()
 {
-    // HP may already be zero when Die() is called.
-    // Use bIsDead instead of IsAlive().
+    // ReceiveDamage() reduces HP to zero before
+    // calling Die(). Therefore, use bIsDead
+    // instead of IsAlive() to prevent duplicates.
     if (bIsDead)
     {
         return;
     }
 
+    // Stop delayed movement initialization.
     GetWorldTimerManager().ClearTimer(
         MovementStartTimer
     );
 
+    // Stop active AI movement.
     StopMovement();
 
-    // AIBase marks the enemy as dead.
+    // AIBase marks this enemy as dead:
+    // bIsDead = true, CurrentHP = 0.
     Super::Die();
 
-    UE_LOG(LogTemp, Warning,
+    UE_LOG(
+        LogTemp,
+        Warning,
         TEXT("[EnemyAI] Enemy died: %s"),
-        *GetName());
+        *GetName()
+    );
 
-    // Notify the spawner and any other subscribers.
+    // Notify EnemySpawner before scheduling removal.
+    // EnemySpawner forwards this to WaveManager.
     OnEnemyDied.Broadcast(this);
+
+    // A dead enemy must no longer block movement
+    // or occupy a spawn location.
+    if (UCapsuleComponent* Capsule = GetCapsuleComponent())
+    {
+        Capsule->SetCollisionEnabled(
+            ECollisionEnabled::NoCollision
+        );
+    }
+
+    if (USkeletalMeshComponent* EnemyMesh = GetMesh())
+    {
+        EnemyMesh->SetCollisionEnabled(
+            ECollisionEnabled::NoCollision
+        );
+    }
+
+    // Remove actor after the configured delay.
+    const float ActualDestroyDelay =
+        FMath::Max(DeathDestroyDelay, 0.01f);
+
+    SetLifeSpan(ActualDestroyDelay);
+
+    UE_LOG(
+        LogTemp,
+        Warning,
+        TEXT("[EnemyAI] %s scheduled for removal in %.2f seconds"),
+        *GetName(),
+        ActualDestroyDelay
+    );
 }
 
 

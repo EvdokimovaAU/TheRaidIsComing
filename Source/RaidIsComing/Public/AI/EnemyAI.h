@@ -8,7 +8,7 @@
 
 class AEnemyAI;
 
-// Event fired once when an enemy dies
+// Event fired once when an enemy dies.
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
     FOnEnemyDied,
     AEnemyAI*,
@@ -23,6 +23,7 @@ class RAIDISCOMING_API AEnemyAI : public AAIBase
 public:
 
     AEnemyAI();
+
 
     // ======================================
     // EVENTS
@@ -55,12 +56,20 @@ public:
     // MOVEMENT SETTINGS
     // ======================================
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI|Movement",
-        meta = (ClampMin = "1.0"))
+    UPROPERTY(
+        EditAnywhere,
+        BlueprintReadWrite,
+        Category = "AI|Movement",
+        meta = (ClampMin = "1.0")
+    )
     float AcceptanceRadius = 100.0f;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI|Movement",
-        meta = (ClampMin = "100.0"))
+    UPROPERTY(
+        EditAnywhere,
+        BlueprintReadWrite,
+        Category = "AI|Movement",
+        meta = (ClampMin = "100.0")
+    )
     float NavigationSearchRadius = 600.0f;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI|Movement")
@@ -71,6 +80,21 @@ public:
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI|Movement")
     bool bAutoStartMovement = true;
+
+
+    // ======================================
+    // DEATH SETTINGS
+    // ======================================
+
+    // Time before the dead enemy is removed.
+    // Increase later if a death animation is added.
+    UPROPERTY(
+        EditAnywhere,
+        BlueprintReadWrite,
+        Category = "AI|Death",
+        meta = (ClampMin = "0.0")
+    )
+    float DeathDestroyDelay = 0.1f;
 
 
     // ======================================
