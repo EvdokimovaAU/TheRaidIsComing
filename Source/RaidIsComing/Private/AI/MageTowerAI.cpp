@@ -1,6 +1,5 @@
 
 #include "AI/MageTowerAI.h"
-
 #include "AI/MageProjectile.h"
 #include "AI/AIBase.h"
 
@@ -30,16 +29,20 @@ void AMageTowerAI::BeginPlay()
 {
     Super::BeginPlay();
 
-    if (!IsValid(DayNightManager.Get()))
+    UWorld* World = GetWorld();
+
+    if (!World)
     {
-        for (TActorIterator<ADayNightManager> It(GetWorld()); It; ++It)
-        {
-            DayNightManager = *It;
-            break;
-        }
+        return;
     }
 
-    if (!IsValid(DayNightManager.Get()))
+    for (TActorIterator<ADayNightManager> It(World); It; ++It)
+    {
+        DayNightManager = *It;
+        break;
+    }
+
+    if (!IsValid(DayNightManager))
     {
         UE_LOG(LogTemp, Warning,
             TEXT("[MageTower] DayNightManager not found: %s"),
@@ -63,24 +66,13 @@ void AMageTowerAI::SetProjectileSpawnPoint(
     ProjectileSpawnPoint = NewSpawnPoint;
 }
 
+void AMageTowerAI::SetIlluminationActor(AActor* NewActor)
+{
+    IlluminationActor = NewActor;
+}
+
 bool AMageTowerAI::CanFireUnderLighting() const
 {
-    if (!IsValid(DayNightManager.Get()))
-    {
-        return false;
-    }
-
-    // Day: normal tower behavior.
-    if (!DayNightManager->IsNight())
-    {
-        return true;
-    }
-
-    const AActor* ActorToCheck =
-        IsValid(IlluminationActor.Get())
-        ? IlluminationActor.Get()
-        : this;
-
     UWorld* World = GetWorld();
 
     if (!World)
@@ -88,14 +80,49 @@ bool AMageTowerAI::CanFireUnderLighting() const
         return false;
     }
 
-    // Night: require an active searchlight covering the tower.
+    if (!IsValid(DayNightManager))
+    {
+        return true;
+    }
+
+    // No lighting restrictions during daytime.
+    if (!DayNightManager->IsNight())
+    {
+        return true;
+    }
+
+    const AActor* ActorToCheck = IlluminationActor.Get();
+
+    if (!IsValid(ActorToCheck))
+    {
+        ActorToCheck = GetOwner();
+    }
+
+    if (!IsValid(ActorToCheck))
+    {
+        ActorToCheck = GetAttachParentActor();
+    }
+
+    if (!IsValid(ActorToCheck))
+    {
+        ActorToCheck = this;
+    }
+
     for (TActorIterator<ASearchlight> It(World); It; ++It)
     {
         const ASearchlight* Light = *It;
 
-        if (IsValid(Light) &&
-            Light->IsLightActive() &&
-            Light->IsActorIlluminated(ActorToCheck))
+        if (!IsValid(Light))
+        {
+            continue;
+        }
+
+        if (!Light->IsLightActive())
+        {
+            continue;
+        }
+
+        if (Light->IsActorIlluminated(ActorToCheck))
         {
             return true;
         }
@@ -158,13 +185,7 @@ void AMageTowerAI::Attack()
         return;
     }
 
-    // Prevent firing if the searchlight moved away.
-    if (!CanFireUnderLighting())
-    {
-        return;
-    }
-
-    if (!CanAttack())
+    if (!CanFireUnderLighting() || !CanAttack())
     {
         return;
     }
@@ -172,14 +193,14 @@ void AMageTowerAI::Attack()
     if (!ProjectileClass)
     {
         UE_LOG(LogTemp, Warning,
-            TEXT("[MageTower] ProjectileClass is NULL!"));
+            TEXT("[MageTower] ProjectileClass is NULL"));
         return;
     }
 
-    if (!IsValid(ProjectileSpawnPoint.Get()))
+    if (!IsValid(ProjectileSpawnPoint))
     {
         UE_LOG(LogTemp, Warning,
-            TEXT("[MageTower] ProjectileSpawnPoint is NULL!"));
+            TEXT("[MageTower] ProjectileSpawnPoint is NULL"));
         return;
     }
 
@@ -198,7 +219,6 @@ void AMageTowerAI::Attack()
 
     FActorSpawnParameters SpawnParams;
     SpawnParams.Owner = this;
-
     SpawnParams.SpawnCollisionHandlingOverride =
         ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 
@@ -213,11 +233,10 @@ void AMageTowerAI::Attack()
     if (!IsValid(Projectile))
     {
         UE_LOG(LogTemp, Error,
-            TEXT("[MageTower] Projectile spawn failed!"));
+            TEXT("[MageTower] Projectile spawn failed"));
         return;
     }
 
-    // Keep existing splash damage mechanics.
     Projectile->InitializeProjectile(
         EnemyTarget,
         Damage,
@@ -240,14 +259,11 @@ void AMageTowerAI::Attack()
     );
 
     NextShotTime = CurrentTime + ShotDelay;
-
-    // Synchronize with base AI attack timing.
     LastAttackTime = CurrentTime;
 
     UE_LOG(LogTemp, Log,
-        TEXT("[MageTower] Shot fired: %s | Delay: %.2f"),
-        *GetName(),
-        ShotDelay);
+        TEXT("[MageTower] Shot fired: %s"),
+        *GetName());
 }
 
 void AMageTowerAI::EndPlay(

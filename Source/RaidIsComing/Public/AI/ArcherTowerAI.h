@@ -34,19 +34,12 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Archer|Projectile")
     void SetProjectileSpawnPoint(USceneComponent* NewSpawnPoint);
 
-    // Building to check against the searchlight.
-    // If empty, checks this AI actor.
-    UPROPERTY(EditInstanceOnly, BlueprintReadWrite,
-        Category = "AI|Lighting")
-    TObjectPtr<AActor> IlluminationActor;
+    // Actor whose visible geometry is checked for lighting.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI|Lighting")
+    TObjectPtr<AActor> IlluminationActor = nullptr;
 
-    // Optional; automatically discovered at BeginPlay.
-    UPROPERTY(EditInstanceOnly, BlueprintReadWrite,
-        Category = "AI|Lighting")
-    TObjectPtr<ADayNightManager> DayNightManager;
-
-    UFUNCTION(BlueprintPure, Category = "AI|Lighting")
-    bool CanFireUnderLighting() const;
+    UFUNCTION(BlueprintCallable, Category = "AI|Lighting")
+    void SetIlluminationActor(AActor* NewActor);
 
     virtual void Attack() override;
 
@@ -54,12 +47,17 @@ protected:
     virtual void BeginPlay() override;
 
     virtual void EndPlay(
-        const EEndPlayReason::Type EndPlayReason
-    ) override;
+        const EEndPlayReason::Type EndPlayReason) override;
 
 private:
     FTimerHandle TargetCheckTimer;
+
     float NextShotTime = 0.0f;
+
+    UPROPERTY(Transient)
+    TObjectPtr<ADayNightManager> DayNightManager = nullptr;
+
+    bool CanFireUnderLighting() const;
 
     void UpdateTower();
 };

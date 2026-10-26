@@ -39,19 +39,12 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Mage|Projectile")
     void SetProjectileSpawnPoint(USceneComponent* NewSpawnPoint);
 
-    // Visual building actor to test for illumination.
-    // Falls back to this actor when not assigned.
-    UPROPERTY(EditInstanceOnly, BlueprintReadWrite,
+    UPROPERTY(EditAnywhere, BlueprintReadWrite,
         Category = "AI|Lighting")
-    TObjectPtr<AActor> IlluminationActor;
+    TObjectPtr<AActor> IlluminationActor = nullptr;
 
-    // Automatically discovered if not assigned.
-    UPROPERTY(EditInstanceOnly, BlueprintReadWrite,
-        Category = "AI|Lighting")
-    TObjectPtr<ADayNightManager> DayNightManager;
-
-    UFUNCTION(BlueprintPure, Category = "AI|Lighting")
-    bool CanFireUnderLighting() const;
+    UFUNCTION(BlueprintCallable, Category = "AI|Lighting")
+    void SetIlluminationActor(AActor* NewActor);
 
     virtual void Attack() override;
 
@@ -59,13 +52,17 @@ protected:
     virtual void BeginPlay() override;
 
     virtual void EndPlay(
-        const EEndPlayReason::Type EndPlayReason
-    ) override;
+        const EEndPlayReason::Type EndPlayReason) override;
 
 private:
     FTimerHandle TargetCheckTimer;
 
     float NextShotTime = 0.0f;
+
+    UPROPERTY(Transient)
+    TObjectPtr<ADayNightManager> DayNightManager = nullptr;
+
+    bool CanFireUnderLighting() const;
 
     void UpdateTower();
 };

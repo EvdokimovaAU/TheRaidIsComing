@@ -1,11 +1,11 @@
 
 #include "AI/ArcherTowerAI.h"
-
 #include "AI/ProjectileArcher.h"
 #include "AI/AIBase.h"
 
 #include "Lighting/DayNightManager.h"
 #include "Lighting/Searchlight.h"
+
 #include "Components/SceneComponent.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
@@ -26,16 +26,19 @@ void AArcherTowerAI::BeginPlay()
 {
     Super::BeginPlay();
 
-    if (!IsValid(DayNightManager.Get()))
+    UWorld* World = GetWorld();
+    if (!World)
     {
-        for (TActorIterator<ADayNightManager> It(GetWorld()); It; ++It)
-        {
-            DayNightManager = *It;
-            break;
-        }
+        return;
     }
 
-    if (!IsValid(DayNightManager.Get()))
+    for (TActorIterator<ADayNightManager> It(World); It; ++It)
+    {
+        DayNightManager = *It;
+        break;
+    }
+
+    if (!IsValid(DayNightManager))
     {
         UE_LOG(LogTemp, Warning,
             TEXT("[ArcherTower] DayNightManager not found: %s"),
@@ -59,24 +62,13 @@ void AArcherTowerAI::SetProjectileSpawnPoint(
     ProjectileSpawnPoint = NewSpawnPoint;
 }
 
+void AArcherTowerAI::SetIlluminationActor(AActor* NewActor)
+{
+    IlluminationActor = NewActor;
+}
+
 bool AArcherTowerAI::CanFireUnderLighting() const
 {
-    if (!IsValid(DayNightManager.Get()))
-    {
-        return false;
-    }
-
-    // Daytime: unrestricted firing.
-    if (!DayNightManager->IsNight())
-    {
-        return true;
-    }
-
-    const AActor* ActorToCheck =
-        IsValid(IlluminationActor.Get())
-        ? IlluminationActor.Get()
-        : this;
-
     UWorld* World = GetWorld();
 
     if (!World)
@@ -84,14 +76,51 @@ bool AArcherTowerAI::CanFireUnderLighting() const
         return false;
     }
 
-    // Nighttime: tower must be illuminated.
+    // If the manager was not found, do not block daytime gameplay.
+    if (!IsValid(DayNightManager))
+    {
+        return true;
+    }
+
+    // Daytime: towers can always fire.
+    if (!DayNightManager->IsNight())
+    {
+        return true;
+    }
+
+    // Nighttime: inspect the actual building actor.
+    const AActor* ActorToCheck = IlluminationActor.Get();
+
+    if (!IsValid(ActorToCheck))
+    {
+        ActorToCheck = GetOwner();
+    }
+
+    if (!IsValid(ActorToCheck))
+    {
+        ActorToCheck = GetAttachParentActor();
+    }
+
+    if (!IsValid(ActorToCheck))
+    {
+        ActorToCheck = this;
+    }
+
     for (TActorIterator<ASearchlight> It(World); It; ++It)
     {
         const ASearchlight* Light = *It;
 
-        if (IsValid(Light) &&
-            Light->IsLightActive() &&
-            Light->IsActorIlluminated(ActorToCheck))
+        if (!IsValid(Light))
+        {
+            continue;
+        }
+
+        if (!Light->IsLightActive())
+        {
+            continue;
+        }
+
+        if (Light->IsActorIlluminated(ActorToCheck))
         {
             return true;
         }
@@ -154,13 +183,7 @@ void AArcherTowerAI::Attack()
         return;
     }
 
-    // Check again immediately before firing.
-    if (!CanFireUnderLighting())
-    {
-        return;
-    }
-
-    if (!CanAttack())
+    if (!CanFireUnderLighting() || !CanAttack())
     {
         return;
     }
@@ -168,14 +191,14 @@ void AArcherTowerAI::Attack()
     if (!ProjectileClass)
     {
         UE_LOG(LogTemp, Warning,
-            TEXT("[ArcherTower] ProjectileClass is NULL!"));
+            TEXT("[ArcherTower] ProjectileClass is NULL"));
         return;
     }
 
-    if (!IsValid(ProjectileSpawnPoint.Get()))
+    if (!IsValid(ProjectileSpawnPoint))
     {
         UE_LOG(LogTemp, Warning,
-            TEXT("[ArcherTower] SpawnPoint is NULL!"));
+            TEXT("[ArcherTower] ProjectileSpawnPoint is NULL"));
         return;
     }
 
@@ -194,7 +217,6 @@ void AArcherTowerAI::Attack()
 
     FActorSpawnParameters SpawnParams;
     SpawnParams.Owner = this;
-
     SpawnParams.SpawnCollisionHandlingOverride =
         ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 
@@ -209,7 +231,7 @@ void AArcherTowerAI::Attack()
     if (!IsValid(Arrow))
     {
         UE_LOG(LogTemp, Error,
-            TEXT("[ArcherTower] Arrow spawn failed!"));
+            TEXT("[ArcherTower] Arrow spawn failed"));
         return;
     }
 
@@ -233,14 +255,14 @@ void AArcherTowerAI::Attack()
     NextShotTime = CurrentTime + ShotDelay;
 
     UE_LOG(LogTemp, Log,
-        TEXT("[ArcherTower] Shot fired: %s | Delay: %.2f"),
-        *GetName(),
-        ShotDelay);
+        TEXT("[ArcherTower] Shot fired: %s"),
+        *GetName());
 }
 
 void AArcherTowerAI::EndPlay(
     const EEndPlayReason::Type EndPlayReason)
 {
     GetWorldTimerManager().ClearTimer(TargetCheckTimer);
+
     Super::EndPlay(EndPlayReason);
 }
