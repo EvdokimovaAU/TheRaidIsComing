@@ -8,6 +8,7 @@
 
 class AMageProjectile;
 class USceneComponent;
+class ADayNightManager;
 
 UCLASS()
 class RAIDISCOMING_API AMageTowerAI : public APlayerAI
@@ -15,35 +16,46 @@ class RAIDISCOMING_API AMageTowerAI : public APlayerAI
     GENERATED_BODY()
 
 public:
-
     AMageTowerAI();
 
-    // Радиус массового урона при попадании магии
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AI|Magic",
+    UPROPERTY(EditAnywhere, BlueprintReadOnly,
+        Category = "AI|Magic",
         meta = (ClampMin = "0.0"))
     float SplashRadius = 200.0f;
 
-    // Частота проверки противников
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AI|Magic",
+    UPROPERTY(EditAnywhere, BlueprintReadOnly,
+        Category = "AI|Magic",
         meta = (ClampMin = "0.01"))
     float TargetCheckInterval = 0.2f;
 
-    // Blueprint магического снаряда
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Mage|Projectile")
+    UPROPERTY(EditAnywhere, BlueprintReadWrite,
+        Category = "Mage|Projectile")
     TSubclassOf<AMageProjectile> ProjectileClass;
 
-    // Точка появления магии
-    UPROPERTY(Transient, BlueprintReadOnly, Category = "Mage|Projectile")
+    UPROPERTY(Transient, BlueprintReadOnly,
+        Category = "Mage|Projectile")
     TObjectPtr<USceneComponent> ProjectileSpawnPoint;
 
-    // Получаем точку выстрела из BP_MageTower
     UFUNCTION(BlueprintCallable, Category = "Mage|Projectile")
     void SetProjectileSpawnPoint(USceneComponent* NewSpawnPoint);
+
+    // Visual building actor to test for illumination.
+    // Falls back to this actor when not assigned.
+    UPROPERTY(EditInstanceOnly, BlueprintReadWrite,
+        Category = "AI|Lighting")
+    TObjectPtr<AActor> IlluminationActor;
+
+    // Automatically discovered if not assigned.
+    UPROPERTY(EditInstanceOnly, BlueprintReadWrite,
+        Category = "AI|Lighting")
+    TObjectPtr<ADayNightManager> DayNightManager;
+
+    UFUNCTION(BlueprintPure, Category = "AI|Lighting")
+    bool CanFireUnderLighting() const;
 
     virtual void Attack() override;
 
 protected:
-
     virtual void BeginPlay() override;
 
     virtual void EndPlay(
@@ -51,12 +63,9 @@ protected:
     ) override;
 
 private:
-
     FTimerHandle TargetCheckTimer;
 
-    // Время следующего разрешённого выстрела
     float NextShotTime = 0.0f;
 
-    // Основной цикл башни
     void UpdateTower();
 };

@@ -4,13 +4,13 @@
 #include "AI/MageProjectile.h"
 #include "AI/AIBase.h"
 
+#include "Lighting/DayNightManager.h"
+#include "Lighting/Searchlight.h"
+
 #include "Components/SceneComponent.h"
 #include "Engine/World.h"
+#include "EngineUtils.h"
 #include "TimerManager.h"
-
-// ==========================================
-// Конструктор
-// ==========================================
 
 AMageTowerAI::AMageTowerAI()
 {
@@ -26,13 +26,25 @@ AMageTowerAI::AMageTowerAI()
     TargetCheckInterval = 0.2f;
 }
 
-// ==========================================
-// Начало игры
-// ==========================================
-
 void AMageTowerAI::BeginPlay()
 {
     Super::BeginPlay();
+
+    if (!IsValid(DayNightManager.Get()))
+    {
+        for (TActorIterator<ADayNightManager> It(GetWorld()); It; ++It)
+        {
+            DayNightManager = *It;
+            break;
+        }
+    }
+
+    if (!IsValid(DayNightManager.Get()))
+    {
+        UE_LOG(LogTemp, Warning,
+            TEXT("[MageTower] DayNightManager not found: %s"),
+            *GetName());
+    }
 
     NextShotTime = 0.0f;
 
@@ -45,19 +57,52 @@ void AMageTowerAI::BeginPlay()
     );
 }
 
-// ==========================================
-// Передача точки выстрела
-// ==========================================
-
 void AMageTowerAI::SetProjectileSpawnPoint(
     USceneComponent* NewSpawnPoint)
 {
     ProjectileSpawnPoint = NewSpawnPoint;
 }
 
-// ==========================================
-// Основной цикл башни
-// ==========================================
+bool AMageTowerAI::CanFireUnderLighting() const
+{
+    if (!IsValid(DayNightManager.Get()))
+    {
+        return false;
+    }
+
+    // Day: normal tower behavior.
+    if (!DayNightManager->IsNight())
+    {
+        return true;
+    }
+
+    const AActor* ActorToCheck =
+        IsValid(IlluminationActor.Get())
+        ? IlluminationActor.Get()
+        : this;
+
+    UWorld* World = GetWorld();
+
+    if (!World)
+    {
+        return false;
+    }
+
+    // Night: require an active searchlight covering the tower.
+    for (TActorIterator<ASearchlight> It(World); It; ++It)
+    {
+        const ASearchlight* Light = *It;
+
+        if (IsValid(Light) &&
+            Light->IsLightActive() &&
+            Light->IsActorIlluminated(ActorToCheck))
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
 
 void AMageTowerAI::UpdateTower()
 {
@@ -67,7 +112,12 @@ void AMageTowerAI::UpdateTower()
         return;
     }
 
-    // Выбираем противника
+    if (!CanFireUnderLighting())
+    {
+        Target = nullptr;
+        return;
+    }
+
     FindTarget();
 
     UWorld* World = GetWorld();
@@ -79,7 +129,6 @@ void AMageTowerAI::UpdateTower()
 
     const float CurrentTime = World->GetTimeSeconds();
 
-    // Проверяем кулдаун
     if (CurrentTime < NextShotTime)
     {
         return;
@@ -93,10 +142,6 @@ void AMageTowerAI::UpdateTower()
     Attack();
 }
 
-// ==========================================
-// Атака магической башни
-// ==========================================
-
 void AMageTowerAI::Attack()
 {
     UWorld* World = GetWorld();
@@ -108,8 +153,13 @@ void AMageTowerAI::Attack()
 
     const float CurrentTime = World->GetTimeSeconds();
 
-    // Защита от повторной атаки
     if (CurrentTime < NextShotTime)
+    {
+        return;
+    }
+
+    // Prevent firing if the searchlight moved away.
+    if (!CanFireUnderLighting())
     {
         return;
     }
@@ -119,41 +169,26 @@ void AMageTowerAI::Attack()
         return;
     }
 
-    // Проверяем класс магического снаряда
     if (!ProjectileClass)
     {
-        UE_LOG(
-            LogTemp,
-            Warning,
-            TEXT("[MageTower] ProjectileClass is NULL!")
-        );
-
+        UE_LOG(LogTemp, Warning,
+            TEXT("[MageTower] ProjectileClass is NULL!"));
         return;
     }
 
-    // Проверяем точку появления снаряда
     if (!IsValid(ProjectileSpawnPoint.Get()))
     {
-        UE_LOG(
-            LogTemp,
-            Warning,
-            TEXT("[MageTower] ProjectileSpawnPoint is NULL!")
-        );
-
+        UE_LOG(LogTemp, Warning,
+            TEXT("[MageTower] ProjectileSpawnPoint is NULL!"));
         return;
     }
 
-    // Получаем цель
     AAIBase* EnemyTarget = Target.Get();
 
     if (!IsValid(EnemyTarget) || !EnemyTarget->IsAlive())
     {
         return;
     }
-
-    // ======================================
-    // Создание магического снаряда
-    // ======================================
 
     const FVector SpawnLocation =
         ProjectileSpawnPoint->GetComponentLocation();
@@ -162,7 +197,6 @@ void AMageTowerAI::Attack()
         ProjectileSpawnPoint->GetComponentRotation();
 
     FActorSpawnParameters SpawnParams;
-
     SpawnParams.Owner = this;
 
     SpawnParams.SpawnCollisionHandlingOverride =
@@ -178,25 +212,17 @@ void AMageTowerAI::Attack()
 
     if (!IsValid(Projectile))
     {
-        UE_LOG(
-            LogTemp,
-            Error,
-            TEXT("[MageTower] Projectile spawn failed!")
-        );
-
+        UE_LOG(LogTemp, Error,
+            TEXT("[MageTower] Projectile spawn failed!"));
         return;
     }
 
-    // Передаём снаряду цель, урон и радиус взрыва
+    // Keep existing splash damage mechanics.
     Projectile->InitializeProjectile(
         EnemyTarget,
         Damage,
         SplashRadius
     );
-
-    // ======================================
-    // Расчёт кулдауна
-    // ======================================
 
     const float Distance = FVector::Dist(
         SpawnLocation,
@@ -208,8 +234,6 @@ void AMageTowerAI::Attack()
         0.05f
     );
 
-    // Следующий выстрел не раньше 85% времени полёта,
-    // но с обязательным соблюдением AttackCooldown.
     const float ShotDelay = FMath::Max(
         FMath::Max(AttackCooldown, 0.01f),
         FlightTime * 0.85f
@@ -217,27 +241,14 @@ void AMageTowerAI::Attack()
 
     NextShotTime = CurrentTime + ShotDelay;
 
-    // Синхронизируем кулдаун с базовой системой AI
+    // Synchronize with base AI attack timing.
     LastAttackTime = CurrentTime;
 
-    UE_LOG(
-        LogTemp,
-        Warning,
-        TEXT("[MAGE DEBUG] Tower: %s | Time: %.2f | Flight: %.2f | Delay: %.2f | Next: %.2f"),
+    UE_LOG(LogTemp, Log,
+        TEXT("[MageTower] Shot fired: %s | Delay: %.2f"),
         *GetName(),
-        CurrentTime,
-        FlightTime,
-        ShotDelay,
-        NextShotTime
-    );
-
-    // Super::Attack() НЕ вызываем.
-    // Урон наносится только после попадания магии.
+        ShotDelay);
 }
-
-// ==========================================
-// Завершение работы
-// ==========================================
 
 void AMageTowerAI::EndPlay(
     const EEndPlayReason::Type EndPlayReason)

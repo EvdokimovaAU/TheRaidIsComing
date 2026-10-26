@@ -8,6 +8,7 @@
 
 class AProjectileArcher;
 class USceneComponent;
+class ADayNightManager;
 
 UCLASS()
 class RAIDISCOMING_API AArcherTowerAI : public APlayerAI
@@ -15,37 +16,41 @@ class RAIDISCOMING_API AArcherTowerAI : public APlayerAI
     GENERATED_BODY()
 
 public:
-
     AArcherTowerAI();
 
-    // Интервал проверки противников
     UPROPERTY(EditAnywhere, BlueprintReadOnly,
         Category = "AI|Archer",
         meta = (ClampMin = "0.01"))
     float TargetCheckInterval = 0.2f;
 
-    // Blueprint стрелы, которую создаёт башня
     UPROPERTY(EditAnywhere, BlueprintReadWrite,
         Category = "Archer|Projectile")
     TSubclassOf<AProjectileArcher> ProjectileClass;
 
-    // Точка появления стрелы
     UPROPERTY(Transient, BlueprintReadOnly,
         Category = "Archer|Projectile")
     TObjectPtr<USceneComponent> ProjectileSpawnPoint;
 
-    // Передача точки выстрела из BP_ArcherTower
-    UFUNCTION(BlueprintCallable,
-        Category = "Archer|Projectile")
-    void SetProjectileSpawnPoint(
-        USceneComponent* NewSpawnPoint
-    );
+    UFUNCTION(BlueprintCallable, Category = "Archer|Projectile")
+    void SetProjectileSpawnPoint(USceneComponent* NewSpawnPoint);
 
-    // Выполнение атаки
+    // Building to check against the searchlight.
+    // If empty, checks this AI actor.
+    UPROPERTY(EditInstanceOnly, BlueprintReadWrite,
+        Category = "AI|Lighting")
+    TObjectPtr<AActor> IlluminationActor;
+
+    // Optional; automatically discovered at BeginPlay.
+    UPROPERTY(EditInstanceOnly, BlueprintReadWrite,
+        Category = "AI|Lighting")
+    TObjectPtr<ADayNightManager> DayNightManager;
+
+    UFUNCTION(BlueprintPure, Category = "AI|Lighting")
+    bool CanFireUnderLighting() const;
+
     virtual void Attack() override;
 
 protected:
-
     virtual void BeginPlay() override;
 
     virtual void EndPlay(
@@ -53,13 +58,8 @@ protected:
     ) override;
 
 private:
-
-    // Таймер проверки противников
     FTimerHandle TargetCheckTimer;
-
-    // Время, когда разрешён следующий выстрел
     float NextShotTime = 0.0f;
 
-    // Основной цикл башни
     void UpdateTower();
 };

@@ -4,40 +4,46 @@
 #include "AI/ProjectileArcher.h"
 #include "AI/AIBase.h"
 
+#include "Lighting/DayNightManager.h"
+#include "Lighting/Searchlight.h"
 #include "Components/SceneComponent.h"
 #include "Engine/World.h"
+#include "EngineUtils.h"
 #include "TimerManager.h"
-
-// ==========================================
-// Конструктор
-// ==========================================
 
 AArcherTowerAI::AArcherTowerAI()
 {
     PrimaryActorTick.bCanEverTick = false;
 
-    // Радиус обнаружения и атаки
     AttackRange = 500.0f;
     DetectionRadius = 500.0f;
 
-    // Урон одной стрелы
     Damage = 10.0f;
-
-    // Минимальная задержка между выстрелами
     AttackCooldown = 2.5f;
 }
-
-// ==========================================
-// Начало игры
-// ==========================================
 
 void AArcherTowerAI::BeginPlay()
 {
     Super::BeginPlay();
 
+    if (!IsValid(DayNightManager.Get()))
+    {
+        for (TActorIterator<ADayNightManager> It(GetWorld()); It; ++It)
+        {
+            DayNightManager = *It;
+            break;
+        }
+    }
+
+    if (!IsValid(DayNightManager.Get()))
+    {
+        UE_LOG(LogTemp, Warning,
+            TEXT("[ArcherTower] DayNightManager not found: %s"),
+            *GetName());
+    }
+
     NextShotTime = 0.0f;
 
-    // Проверяем противников каждые 0.2 секунды
     GetWorldTimerManager().SetTimer(
         TargetCheckTimer,
         this,
@@ -47,19 +53,52 @@ void AArcherTowerAI::BeginPlay()
     );
 }
 
-// ==========================================
-// Передача точки появления стрелы
-// ==========================================
-
 void AArcherTowerAI::SetProjectileSpawnPoint(
     USceneComponent* NewSpawnPoint)
 {
     ProjectileSpawnPoint = NewSpawnPoint;
 }
 
-// ==========================================
-// Основной цикл башни
-// ==========================================
+bool AArcherTowerAI::CanFireUnderLighting() const
+{
+    if (!IsValid(DayNightManager.Get()))
+    {
+        return false;
+    }
+
+    // Daytime: unrestricted firing.
+    if (!DayNightManager->IsNight())
+    {
+        return true;
+    }
+
+    const AActor* ActorToCheck =
+        IsValid(IlluminationActor.Get())
+        ? IlluminationActor.Get()
+        : this;
+
+    UWorld* World = GetWorld();
+
+    if (!World)
+    {
+        return false;
+    }
+
+    // Nighttime: tower must be illuminated.
+    for (TActorIterator<ASearchlight> It(World); It; ++It)
+    {
+        const ASearchlight* Light = *It;
+
+        if (IsValid(Light) &&
+            Light->IsLightActive() &&
+            Light->IsActorIlluminated(ActorToCheck))
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
 
 void AArcherTowerAI::UpdateTower()
 {
@@ -69,24 +108,28 @@ void AArcherTowerAI::UpdateTower()
         return;
     }
 
-    // Обновляем приоритетную цель
+    if (!CanFireUnderLighting())
+    {
+        Target = nullptr;
+        return;
+    }
+
     FindTarget();
 
-    if (!GetWorld())
+    UWorld* World = GetWorld();
+
+    if (!World)
     {
         return;
     }
 
-    const float CurrentTime =
-        GetWorld()->GetTimeSeconds();
+    const float CurrentTime = World->GetTimeSeconds();
 
-    // Кулдаун ещё не закончился
     if (CurrentTime < NextShotTime)
     {
         return;
     }
 
-    // Проверяем базовые условия атаки
     if (!CanAttack())
     {
         return;
@@ -94,10 +137,6 @@ void AArcherTowerAI::UpdateTower()
 
     Attack();
 }
-
-// ==========================================
-// Атака башни
-// ==========================================
 
 void AArcherTowerAI::Attack()
 {
@@ -108,11 +147,15 @@ void AArcherTowerAI::Attack()
         return;
     }
 
-    const float CurrentTime =
-        World->GetTimeSeconds();
+    const float CurrentTime = World->GetTimeSeconds();
 
-    // Повторная защита от слишком частых атак
     if (CurrentTime < NextShotTime)
+    {
+        return;
+    }
+
+    // Check again immediately before firing.
+    if (!CanFireUnderLighting())
     {
         return;
     }
@@ -122,41 +165,26 @@ void AArcherTowerAI::Attack()
         return;
     }
 
-    // Проверяем Blueprint стрелы
     if (!ProjectileClass)
     {
-        UE_LOG(
-            LogTemp,
-            Warning,
-            TEXT("[ArcherTower] ProjectileClass is NULL!")
-        );
-
+        UE_LOG(LogTemp, Warning,
+            TEXT("[ArcherTower] ProjectileClass is NULL!"));
         return;
     }
 
-    // Проверяем точку выстрела
     if (!IsValid(ProjectileSpawnPoint.Get()))
     {
-        UE_LOG(
-            LogTemp,
-            Warning,
-            TEXT("[ArcherTower] SpawnPoint is NULL!")
-        );
-
+        UE_LOG(LogTemp, Warning,
+            TEXT("[ArcherTower] SpawnPoint is NULL!"));
         return;
     }
 
-    // Получаем текущую цель
     AAIBase* EnemyTarget = Target.Get();
 
     if (!IsValid(EnemyTarget) || !EnemyTarget->IsAlive())
     {
         return;
     }
-
-    // ======================================
-    // Создание стрелы
-    // ======================================
 
     const FVector SpawnLocation =
         ProjectileSpawnPoint->GetComponentLocation();
@@ -165,7 +193,6 @@ void AArcherTowerAI::Attack()
         ProjectileSpawnPoint->GetComponentRotation();
 
     FActorSpawnParameters SpawnParams;
-
     SpawnParams.Owner = this;
 
     SpawnParams.SpawnCollisionHandlingOverride =
@@ -181,76 +208,39 @@ void AArcherTowerAI::Attack()
 
     if (!IsValid(Arrow))
     {
-        UE_LOG(
-            LogTemp,
-            Error,
-            TEXT("[ArcherTower] Arrow spawn failed!")
-        );
-
+        UE_LOG(LogTemp, Error,
+            TEXT("[ArcherTower] Arrow spawn failed!"));
         return;
     }
 
-    // Передаём стреле противника и урон
-    Arrow->InitializeProjectile(
-        EnemyTarget,
-        Damage
-    );
+    Arrow->InitializeProjectile(EnemyTarget, Damage);
 
-    // ======================================
-    // Расчёт задержки между выстрелами
-    // ======================================
-
-    // Расстояние от башни до врага
     const float Distance = FVector::Dist(
         SpawnLocation,
         EnemyTarget->GetActorLocation()
     );
 
-    // Примерное время полёта стрелы
     const float FlightTime = FMath::Max(
         Distance / FMath::Max(Arrow->FlightSpeed, 1.0f),
         0.05f
     );
 
-    // Следующая стрела не должна появляться,
-    // пока предыдущая не пройдёт 85% времени полёта.
-    // Также соблюдаем минимальный AttackCooldown.
     const float ShotDelay = FMath::Max(
         FMath::Max(AttackCooldown, 0.01f),
         FlightTime * 0.85f
     );
 
-    // Фиксируем время следующего выстрела
     NextShotTime = CurrentTime + ShotDelay;
 
-    // ======================================
-    // Отладка
-    // ======================================
-
-    UE_LOG(
-        LogTemp,
-        Warning,
-        TEXT("[ARROW DEBUG] Tower: %s | Time: %.2f | Flight: %.2f | Delay: %.2f | Next: %.2f"),
+    UE_LOG(LogTemp, Log,
+        TEXT("[ArcherTower] Shot fired: %s | Delay: %.2f"),
         *GetName(),
-        CurrentTime,
-        FlightTime,
-        ShotDelay,
-        NextShotTime
-    );
-
-    // ВАЖНО:
-    // Super::Attack() НЕ вызываем.
-    // Урон наносится самой стрелой при попадании.
+        ShotDelay);
 }
-
-// ==========================================
-// Завершение работы
-// ==========================================
 
 void AArcherTowerAI::EndPlay(
     const EEndPlayReason::Type EndPlayReason)
 {
     GetWorldTimerManager().ClearTimer(TargetCheckTimer);
-
     Super::EndPlay(EndPlayReason);
 }
