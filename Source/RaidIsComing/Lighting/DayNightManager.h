@@ -6,6 +6,7 @@
 
 class ADirectionalLight;
 class ASkyLight;
+class AWaveManager;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FRICNightStateChanged, bool, bNight);
 
@@ -48,6 +49,11 @@ public:
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "DayNight|Transition", meta = (ClampMin = "0.01", Units = "s"))
     float TransitionDuration = 3.0f;
+
+    // Optional: assign the level's existing wave manager.
+    // Without it UpdateWaveState remains available for manual/external control.
+    UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "DayNight|Waves")
+    TObjectPtr<AWaveManager> WaveManager;
 
     // Назначаются пипеткой на экземпляре менеджера в уровне.
     UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "DayNight|Lights")
@@ -94,8 +100,18 @@ public:
 
 protected:
     virtual void BeginPlay() override;
+    virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 private:
+    UFUNCTION()
+    void HandleWaveStarted(int32 WaveNumber);
+
+    UFUNCTION()
+    void HandleWaveCompleted(int32 WaveNumber);
+
+    // Reuses the existing smooth transition for night and dawn.
+    void StartDarknessTransition(float NewTarget);
+
     float StartDarkness = 0.0f;
     float TargetDarkness = 0.0f;
     float TransitionElapsed = 0.0f;

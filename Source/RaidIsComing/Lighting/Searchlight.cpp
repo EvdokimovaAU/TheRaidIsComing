@@ -10,6 +10,11 @@
 #include "Components/BoxComponent.h"
 #include "Components/SphereComponent.h"
 #include "Components/CapsuleComponent.h"
+#include "Components/InputComponent.h"
+#include "GameFramework/PlayerController.h"
+#include "Engine/World.h"
+#include "Engine/EngineTypes.h"
+#include "InputCoreTypes.h"
 
 namespace SearchlightGeometry
 {
@@ -195,6 +200,33 @@ void ASearchlight::BeginPlay()
         UE_LOG(LogTemp, Warning, TEXT("Searchlight %s: assign DayNightManager on the level instance."), *GetName());
     }
     RefreshActivation();
+
+    // Only one local player is used in this project. Bind the key on the
+    // placed actor so the Level Blueprint is not required for searchlight input.
+    if (bEnableShiftInput && GetWorld())
+    {
+        APlayerController* Controller = GetWorld()->GetFirstPlayerController();
+        if (IsValid(Controller) && Controller->IsLocalController())
+        {
+            InputPlayerController = Controller;
+            EnableInput(Controller);
+
+            if (InputComponent)
+            {
+                // Do not consume Shift: other gameplay mappings may still use it.
+                InputComponent->BindKey(EKeys::LeftShift, IE_Pressed,
+                    this, &ASearchlight::HandleShiftPressed).bConsumeInput = false;
+                InputComponent->BindKey(EKeys::LeftShift, IE_Released,
+                    this, &ASearchlight::HandleShiftReleased).bConsumeInput = false;
+            }
+        }
+        else
+        {
+            UE_LOG(LogTemp, Warning,
+                TEXT("Searchlight %s: no local PlayerController for Shift input."),
+                *GetName());
+        }
+    }
 }
 
 void ASearchlight::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -203,7 +235,38 @@ void ASearchlight::EndPlay(const EEndPlayReason::Type EndPlayReason)
     {
         DayNightManager->OnNightStateChanged.RemoveDynamic(this, &ASearchlight::HandleNightStateChanged);
     }
+    if (IsValid(InputPlayerController.Get()))
+    {
+        DisableInput(InputPlayerController.Get());
+    }
     Super::EndPlay(EndPlayReason);
+}
+
+void ASearchlight::HandleShiftPressed()
+{
+    SetActivationRequested(true);
+    UpdateAimFromCursor();
+}
+
+void ASearchlight::HandleShiftReleased()
+{
+    SetActivationRequested(false);
+}
+
+void ASearchlight::UpdateAimFromCursor()
+{
+    APlayerController* Controller = InputPlayerController.Get();
+    if (!IsValid(Controller))
+    {
+        return;
+    }
+
+    FHitResult Hit;
+    if (Controller->GetHitResultUnderCursorByChannel(
+        UEngineTypes::ConvertToTraceType(ECC_Visibility), false, Hit))
+    {
+        SetAimLocation(Hit.ImpactPoint);
+    }
 }
 
 void ASearchlight::ApplySettings()
@@ -258,6 +321,12 @@ void ASearchlight::Tick(float DeltaSeconds)
     {
         RefreshActivation();
         return;
+    }
+    // Follow the mouse continuously while the light is active.
+    // The existing rotation-speed interpolation below remains unchanged.
+    if (bEnableShiftInput)
+    {
+        UpdateAimFromCursor();
     }
     if (!bHasAimLocation)
     {

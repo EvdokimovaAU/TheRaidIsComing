@@ -5,6 +5,7 @@
 #include "Searchlight.generated.h"
 
 class ADayNightManager;
+class APlayerController;
 class USceneComponent;
 class UStaticMeshComponent;
 class USpotLightComponent;
@@ -19,7 +20,8 @@ public:
     virtual void Tick(float DeltaSeconds) override;
     virtual void OnConstruction(const FTransform& Transform) override;
 
-    // Внешний контроллер передаёт состояние Shift и точку попадания курсора.
+    // Управление Shift/курсором доступно в самом акторе; внешние системы
+    // по-прежнему могут вызывать эти методы напрямую.
     UFUNCTION(BlueprintCallable, Category = "Searchlight")
     void SetActivationRequested(bool bRequested);
 
@@ -64,6 +66,11 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Searchlight|Settings")
     FLinearColor LightColor = FLinearColor::White;
 
+    // Вкл. по умолчанию для одиночной игры. Отключить, если ввод
+    // будет перенесён в PlayerController / Enhanced Input.
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Searchlight|Input")
+    bool bEnableShiftInput = true;
+
 protected:
     virtual void BeginPlay() override;
     virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
@@ -72,6 +79,11 @@ private:
     bool bActivationRequested = false;
     bool bHasAimLocation = false;
     FVector AimLocation = FVector::ZeroVector;
+    TWeakObjectPtr<APlayerController> InputPlayerController;
+
+    void HandleShiftPressed();
+    void HandleShiftReleased();
+    void UpdateAimFromCursor();
 
     UFUNCTION()
     void HandleNightStateChanged(bool bNight);

@@ -1,4 +1,5 @@
 #include "DayNightManager.h"
+#include "AI/WaveManager.h"
 
 #include "Components/SceneComponent.h"
 #include "Components/DirectionalLightComponent.h"
@@ -27,6 +28,14 @@ ADayNightManager::ADayNightManager()
 void ADayNightManager::BeginPlay()
 {
     Super::BeginPlay();
+
+    if (IsValid(WaveManager.Get()))
+    {
+        // Start from daylight, then smoothly catch up even if a wave began
+        // before this actor's BeginPlay. Do not depend on actor startup order.
+        CurrentWave = 0;
+        TotalWaves = FMath::Max(1, WaveManager->GetTotalWaves());
+    }
 
     TotalWaves = FMath::Max(1, TotalWaves);
     CurrentWave = FMath::Clamp(CurrentWave, 0, TotalWaves);
@@ -60,6 +69,70 @@ void ADayNightManager::BeginPlay()
     ApplyLighting();
     RefreshNightState();
     SetActorTickEnabled(false);
+
+    if (IsValid(WaveManager.Get()))
+    {
+        WaveManager->OnWaveStarted.AddUniqueDynamic(
+            this, &ADayNightManager::HandleWaveStarted);
+        WaveManager->OnWaveCompleted.AddUniqueDynamic(
+            this, &ADayNightManager::HandleWaveCompleted);
+
+        UE_LOG(LogTemp, Log, TEXT("DayNight: connected to wave manager %s."),
+            *GetNameSafe(WaveManager.Get()));
+
+        // Catch up if this actor begins play after an active wave started.
+        // A completed wave should not trigger a new night.
+        if (WaveManager->WaveState == EWaveState::Spawning ||
+            WaveManager->WaveState == EWaveState::InProgress)
+        {
+            HandleWaveStarted(WaveManager->GetCurrentWaveNumber());
+        }
+    }
+    else
+    {
+        UE_LOG(LogTemp, Warning,
+            TEXT("DayNight: WaveManager is not assigned; using manual UpdateWaveState control."));
+    }
+}
+
+void ADayNightManager::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+    if (IsValid(WaveManager.Get()))
+    {
+        WaveManager->OnWaveStarted.RemoveDynamic(
+            this, &ADayNightManager::HandleWaveStarted);
+        WaveManager->OnWaveCompleted.RemoveDynamic(
+            this, &ADayNightManager::HandleWaveCompleted);
+    }
+    Super::EndPlay(EndPlayReason);
+}
+
+void ADayNightManager::HandleWaveStarted(int32 WaveNumber)
+{
+    if (!IsValid(WaveManager.Get()))
+    {
+        return;
+    }
+
+    const int32 ActualTotal = WaveManager->GetTotalWaves();
+    if (ActualTotal <= 0)
+    {
+        UE_LOG(LogTemp, Warning,
+            TEXT("DayNight: WaveManager has no waves; keeping daylight."));
+        UpdateWaveState(0, 1);
+        return;
+    }
+
+    UpdateWaveState(WaveNumber, ActualTotal);
+}
+
+void ADayNightManager::HandleWaveCompleted(int32 WaveNumber)
+{
+    UE_LOG(LogTemp, Log,
+        TEXT("DayNight: wave %d completed; starting dawn."), WaveNumber);
+
+    // Keep CurrentWave as the real wave number; only change the lighting target.
+    StartDarknessTransition(0.0f);
 }
 
 float ADayNightManager::CalculateTargetDarkness() const
@@ -86,8 +159,15 @@ void ADayNightManager::UpdateWaveState(int32 NewCurrentWave, int32 NewTotalWaves
     UE_LOG(LogTemp, Log, TEXT("DayNight: wave %d/%d, target darkness %.2f."),
         CurrentWave, TotalWaves, NewTarget);
 
-    // Повторное уведомление о той же волне не перезапускает переход.
-    if (NewTarget == TargetDarkness)
+    StartDarknessTransition(NewTarget);
+}
+
+void ADayNightManager::StartDarknessTransition(float NewTarget)
+{
+    NewTarget = FMath::Clamp(NewTarget, 0.0f, 1.0f);
+
+    // Avoid restarting the same transition.
+    if (FMath::IsNearlyEqual(NewTarget, TargetDarkness))
     {
         return;
     }
