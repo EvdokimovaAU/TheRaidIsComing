@@ -36,6 +36,9 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Animation|Combat")
     void PlayAttackAnimation();
 
+    UPROPERTY(BlueprintReadOnly, Category = "Animation")
+    bool bIsDead = false;
+
     // Stop attack animation
     UFUNCTION(BlueprintCallable, Category = "Animation|Combat")
     void StopAttackAnimation();
