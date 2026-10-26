@@ -1,6 +1,5 @@
 
 #include "AI/EnemySwordsmanAI.h"
-
 #include "AI/EnemySwordsmanAnimInstance.h"
 
 #include "Construction/RICBuilding.h"
@@ -9,12 +8,9 @@
 #include "AIController.h"
 #include "Engine/World.h"
 #include "Engine/DamageEvents.h"
-
 #include "GameFramework/DamageType.h"
 #include "Components/SkeletalMeshComponent.h"
-
 #include "TimerManager.h"
-
 
 // ==========================================
 // CONSTRUCTOR
@@ -24,7 +20,6 @@ AEnemySwordsmanAI::AEnemySwordsmanAI()
 {
     PrimaryActorTick.bCanEverTick = false;
 }
-
 
 // ==========================================
 // BEGIN PLAY
@@ -51,14 +46,11 @@ void AEnemySwordsmanAI::BeginPlay()
     );
 }
 
-
 // ==========================================
 // CHECK IF ACTOR IS A VALID WALL
 // ==========================================
 
-bool AEnemySwordsmanAI::IsValidWall(
-    AActor* Actor
-) const
+bool AEnemySwordsmanAI::IsValidWall(AActor* Actor) const
 {
     const ARICBuilding* Building =
         Cast<ARICBuilding>(Actor);
@@ -68,13 +60,10 @@ bool AEnemySwordsmanAI::IsValidWall(
         return false;
     }
 
-    // Only Barrier can be attacked as an obstacle.
-    // Towers and Barracks are ignored.
     return
         Building->BuildingType == ERICBuildingType::Barrier &&
         Building->IsAlive();
 }
-
 
 // ==========================================
 // CHECK WALL AHEAD
@@ -91,12 +80,10 @@ void AEnemySwordsmanAI::CheckWallAhead()
     }
 
     const FVector Start =
-        GetActorLocation() +
-        FVector(0.0f, 0.0f, 45.0f);
+        GetActorLocation() + FVector(0.0f, 0.0f, 45.0f);
 
     FVector Direction =
-        Capitol->GetActorLocation() -
-        GetActorLocation();
+        Capitol->GetActorLocation() - GetActorLocation();
 
     Direction.Z = 0.0f;
 
@@ -109,7 +96,6 @@ void AEnemySwordsmanAI::CheckWallAhead()
         Start + Direction * WallDetectionDistance;
 
     FCollisionQueryParams QueryParams;
-
     QueryParams.AddIgnoredActor(this);
     QueryParams.bTraceComplex = false;
 
@@ -143,14 +129,11 @@ void AEnemySwordsmanAI::CheckWallAhead()
     }
 }
 
-
 // ==========================================
 // OBSTACLE DETECTED
 // ==========================================
 
-void AEnemySwordsmanAI::OnObstacleDetected(
-    AActor* Obstacle
-)
+void AEnemySwordsmanAI::OnObstacleDetected(AActor* Obstacle)
 {
     if (!IsAlive() || !IsValidWall(Obstacle))
     {
@@ -158,20 +141,16 @@ void AEnemySwordsmanAI::OnObstacleDetected(
     }
 
     StopCapitolAttack();
-
     StopMovement();
 
     StartWallAttack(Obstacle);
 }
 
-
 // ==========================================
 // START WALL ATTACK
 // ==========================================
 
-void AEnemySwordsmanAI::StartWallAttack(
-    AActor* Wall
-)
+void AEnemySwordsmanAI::StartWallAttack(AActor* Wall)
 {
     if (!IsAlive() || !IsValidWall(Wall))
     {
@@ -205,7 +184,6 @@ void AEnemySwordsmanAI::StartWallAttack(
         true
     );
 }
-
 
 // ==========================================
 // ATTACK WALL
@@ -247,9 +225,7 @@ void AEnemySwordsmanAI::AttackWall()
 
     PlayAttackAnimation();
 
-    FDamageEvent DamageEvent(
-        UDamageType::StaticClass()
-    );
+    FDamageEvent DamageEvent(UDamageType::StaticClass());
 
     const float AppliedDamage =
         Wall->TakeDamage(
@@ -273,23 +249,19 @@ void AEnemySwordsmanAI::AttackWall()
     }
 }
 
-
 // ==========================================
 // STOP WALL ATTACK
 // ==========================================
 
 void AEnemySwordsmanAI::StopWallAttack()
 {
-    GetWorldTimerManager().ClearTimer(
-        WallAttackTimer
-    );
+    GetWorldTimerManager().ClearTimer(WallAttackTimer);
 
     bAttackingWall = false;
     TargetWall = nullptr;
 
     StopAttackAnimation();
 }
-
 
 // ==========================================
 // WALL DESTROYED
@@ -310,7 +282,6 @@ void AEnemySwordsmanAI::OnWallDestroyed()
         MoveToTarget();
     }
 }
-
 
 // ==========================================
 // CHECK CAPITOL DISTANCE
@@ -343,7 +314,6 @@ void AEnemySwordsmanAI::CheckCapitolDistance()
         StartCapitolAttack();
     }
 }
-
 
 // ==========================================
 // START CAPITOL ATTACK
@@ -382,7 +352,6 @@ void AEnemySwordsmanAI::StartCapitolAttack()
     );
 }
 
-
 // ==========================================
 // ATTACK CAPITOL
 // ==========================================
@@ -414,9 +383,7 @@ void AEnemySwordsmanAI::AttackCapitol()
 
     PlayAttackAnimation();
 
-    FDamageEvent DamageEvent(
-        UDamageType::StaticClass()
-    );
+    FDamageEvent DamageEvent(UDamageType::StaticClass());
 
     const float AppliedDamage =
         Building->TakeDamage(
@@ -445,22 +412,18 @@ void AEnemySwordsmanAI::AttackCapitol()
     }
 }
 
-
 // ==========================================
 // STOP CAPITOL ATTACK
 // ==========================================
 
 void AEnemySwordsmanAI::StopCapitolAttack()
 {
-    GetWorldTimerManager().ClearTimer(
-        CapitolAttackTimer
-    );
+    GetWorldTimerManager().ClearTimer(CapitolAttackTimer);
 
     bAttackingCapitol = false;
 
     StopAttackAnimation();
 }
-
 
 // ==========================================
 // PLAY ATTACK ANIMATION
@@ -468,6 +431,11 @@ void AEnemySwordsmanAI::StopCapitolAttack()
 
 void AEnemySwordsmanAI::PlayAttackAnimation()
 {
+    if (!IsAlive())
+    {
+        return;
+    }
+
     USkeletalMeshComponent* MeshComponent = GetMesh();
 
     if (!MeshComponent)
@@ -485,7 +453,6 @@ void AEnemySwordsmanAI::PlayAttackAnimation()
         AnimInstance->PlayAttackAnimation();
     }
 }
-
 
 // ==========================================
 // STOP ATTACK ANIMATION
@@ -511,7 +478,6 @@ void AEnemySwordsmanAI::StopAttackAnimation()
     }
 }
 
-
 // ==========================================
 // DEATH
 // ==========================================
@@ -523,22 +489,38 @@ void AEnemySwordsmanAI::Die()
         return;
     }
 
-    GetWorldTimerManager().ClearTimer(
-        WallCheckTimer
-    );
-
-    GetWorldTimerManager().ClearTimer(
-        CapitolCheckTimer
-    );
+    GetWorldTimerManager().ClearTimer(WallCheckTimer);
+    GetWorldTimerManager().ClearTimer(CapitolCheckTimer);
 
     StopCapitolAttack();
     StopWallAttack();
+    StopMovement();
 
-    // EnemyAI handles death notification,
-    // collision disabling and actor removal.
+    USkeletalMeshComponent* MeshComponent = GetMesh();
+
+    if (MeshComponent)
+    {
+        UEnemySwordsmanAnimInstance* AnimInstance =
+            Cast<UEnemySwordsmanAnimInstance>(
+                MeshComponent->GetAnimInstance()
+            );
+
+        if (AnimInstance)
+        {
+            AnimInstance->StopAttackAnimation();
+            AnimInstance->bIsDead = true;
+        }
+    }
+
+    UE_LOG(
+        LogTemp,
+        Warning,
+        TEXT("[Swordsman] Death animation triggered")
+    );
+
+    // Parent handles death notification and removal.
     Super::Die();
 }
-
 
 // ==========================================
 // END PLAY
@@ -548,21 +530,10 @@ void AEnemySwordsmanAI::EndPlay(
     const EEndPlayReason::Type EndPlayReason
 )
 {
-    GetWorldTimerManager().ClearTimer(
-        WallCheckTimer
-    );
-
-    GetWorldTimerManager().ClearTimer(
-        WallAttackTimer
-    );
-
-    GetWorldTimerManager().ClearTimer(
-        CapitolCheckTimer
-    );
-
-    GetWorldTimerManager().ClearTimer(
-        CapitolAttackTimer
-    );
+    GetWorldTimerManager().ClearTimer(WallCheckTimer);
+    GetWorldTimerManager().ClearTimer(WallAttackTimer);
+    GetWorldTimerManager().ClearTimer(CapitolCheckTimer);
+    GetWorldTimerManager().ClearTimer(CapitolAttackTimer);
 
     Super::EndPlay(EndPlayReason);
 }
