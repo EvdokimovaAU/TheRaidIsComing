@@ -36,6 +36,38 @@ public:
     TObjectPtr<ARICBuilding> TargetWall = nullptr;
 
     // ======================================
+    // WALL DECISION SETTINGS
+    // ======================================
+
+    // 50 = 50% attack, 50% avoid
+    UPROPERTY(
+        EditAnywhere,
+        BlueprintReadWrite,
+        Category = "AI|Wall|Decision",
+        meta = (ClampMin = "0.0", ClampMax = "100.0")
+    )
+    float WallAttackChance = 50.0f;
+
+    // Distance used to search for a waypoint
+    // beside the obstacle
+    UPROPERTY(
+        EditAnywhere,
+        BlueprintReadWrite,
+        Category = "AI|Wall|Decision",
+        meta = (ClampMin = "50.0")
+    )
+    float WallAvoidanceDistance = 350.0f;
+
+    // Maximum duration of an avoidance attempt
+    UPROPERTY(
+        EditAnywhere,
+        BlueprintReadWrite,
+        Category = "AI|Wall|Decision",
+        meta = (ClampMin = "0.5")
+    )
+    float WallAvoidanceTimeout = 5.0f;
+
+    // ======================================
     // WALL COMBAT
     // ======================================
 
@@ -85,9 +117,35 @@ protected:
 
 private:
 
+    // ======================================
+    // WALL DETECTION
+    // ======================================
+
     void CheckWallAhead();
 
     bool IsValidWall(AActor* Actor) const;
+
+    // ======================================
+    // WALL AVOIDANCE
+    // ======================================
+
+    bool TryAvoidWall(AActor* Wall);
+
+    void UpdateWallAvoidance();
+
+    void StopWallAvoidance();
+
+    TWeakObjectPtr<ARICBuilding> AvoidedWall;
+
+    FVector AvoidanceDestination = FVector::ZeroVector;
+
+    bool bAvoidingWall = false;
+
+    float AvoidanceStartTime = 0.0f;
+
+    // ======================================
+    // ANIMATIONS
+    // ======================================
 
     void PlayAttackAnimation();
 
@@ -99,6 +157,7 @@ private:
 
     FTimerHandle WallCheckTimer;
     FTimerHandle WallAttackTimer;
+    FTimerHandle WallAvoidanceTimer;
 
     FTimerHandle CapitolCheckTimer;
     FTimerHandle CapitolAttackTimer;

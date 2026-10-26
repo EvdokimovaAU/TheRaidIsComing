@@ -8,7 +8,6 @@
 
 class AEnemyAI;
 
-// Event fired once when an enemy dies.
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
     FOnEnemyDied,
     AEnemyAI*,
@@ -24,7 +23,6 @@ public:
 
     AEnemyAI();
 
-
     // ======================================
     // EVENTS
     // ======================================
@@ -32,6 +30,19 @@ public:
     UPROPERTY(BlueprintAssignable, Category = "AI|Events")
     FOnEnemyDied OnEnemyDied;
 
+    // ======================================
+    // REWARDS
+    // ======================================
+
+    // Money awarded when this enemy dies.
+    // Can be configured separately for each enemy Blueprint.
+    UPROPERTY(
+        EditAnywhere,
+        BlueprintReadOnly,
+        Category = "AI|Rewards",
+        meta = (ClampMin = "0", UIMin = "0")
+    )
+    int32 KillReward = 50;
 
     // ======================================
     // TARGET
@@ -43,14 +54,12 @@ public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AI|Target")
     TObjectPtr<AActor> CurrentTarget = nullptr;
 
-
     // ======================================
     // NAVIGATION
     // ======================================
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AI|Navigation")
     float RouteProgress = 0.0f;
-
 
     // ======================================
     // MOVEMENT SETTINGS
@@ -81,13 +90,10 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI|Movement")
     bool bAutoStartMovement = true;
 
-
     // ======================================
     // DEATH SETTINGS
     // ======================================
 
-    // Time before the dead enemy is removed.
-    // Increase later if a death animation is added.
     UPROPERTY(
         EditAnywhere,
         BlueprintReadWrite,
@@ -95,7 +101,6 @@ public:
         meta = (ClampMin = "0.0")
     )
     float DeathDestroyDelay = 0.1f;
-
 
     // ======================================
     // TARGET METHODS
@@ -106,7 +111,6 @@ public:
 
     UFUNCTION(BlueprintCallable, Category = "AI|Target")
     AActor* GetCurrentTarget() const;
-
 
     // ======================================
     // MOVEMENT METHODS
@@ -121,13 +125,11 @@ public:
     UFUNCTION(BlueprintCallable, Category = "AI|Movement")
     virtual void OnObstacleDetected(AActor* Obstacle);
 
-
     // ======================================
     // DEATH
     // ======================================
 
     virtual void Die() override;
-
 
 protected:
 
@@ -137,10 +139,15 @@ protected:
         const EEndPlayReason::Type EndPlayReason
     ) override;
 
-
 private:
 
     FTimerHandle MovementStartTimer;
 
+    // Prevents duplicate money rewards.
+    bool bKillRewardGranted = false;
+
     void TryStartMovement();
+
+    // Awards money to the player.
+    void GrantKillReward();
 };

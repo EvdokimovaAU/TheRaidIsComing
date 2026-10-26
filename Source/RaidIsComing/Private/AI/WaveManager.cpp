@@ -1,12 +1,20 @@
 
 #include "AI/WaveManager.h"
+#include "TimerManager.h"
+#include "Engine/World.h"
 
+// ==========================================
+// CONSTRUCTOR
+// ==========================================
 
 AWaveManager::AWaveManager()
 {
     PrimaryActorTick.bCanEverTick = false;
 }
 
+// ==========================================
+// BEGIN PLAY
+// ==========================================
 
 void AWaveManager::BeginPlay()
 {
@@ -15,8 +23,23 @@ void AWaveManager::BeginPlay()
     UE_LOG(LogTemp, Warning,
         TEXT("[WaveManager] Initialized. Total waves: %d"),
         Waves.Num());
+
+    UE_LOG(LogTemp, Warning,
+        TEXT("[WaveManager] Time between waves: %.1f seconds"),
+        TimeBetweenWaves);
 }
 
+// ==========================================
+// END PLAY
+// ==========================================
+
+void AWaveManager::EndPlay(
+    const EEndPlayReason::Type EndPlayReason)
+{
+    GetWorldTimerManager().ClearTimer(NextWaveTimerHandle);
+
+    Super::EndPlay(EndPlayReason);
+}
 
 // ==========================================
 // START NEXT WAVE
@@ -42,6 +65,10 @@ void AWaveManager::StartNextWave()
 
         return;
     }
+
+    // Prevent a pending timer from starting
+    // an additional wave unexpectedly.
+    GetWorldTimerManager().ClearTimer(NextWaveTimerHandle);
 
     const FWaveData& NextWave = Waves[NextIndex];
 
@@ -71,7 +98,6 @@ void AWaveManager::StartNextWave()
     OnWaveStarted.Broadcast(GetCurrentWaveNumber());
 }
 
-
 // ==========================================
 // REGISTER ENEMY
 // ==========================================
@@ -89,7 +115,6 @@ void AWaveManager::RegisterEnemy()
         TEXT("[WaveManager] Enemy registered. Alive: %d"),
         AliveEnemies);
 }
-
 
 // ==========================================
 // ENEMY DIED
@@ -111,7 +136,6 @@ void AWaveManager::NotifyEnemyDied()
 
     CheckWaveCompletion();
 }
-
 
 // ==========================================
 // FINISH SPAWNING
@@ -135,14 +159,20 @@ void AWaveManager::FinishSpawning()
     CheckWaveCompletion();
 }
 
-
 // ==========================================
-// CHECK COMPLETION
+// CHECK WAVE COMPLETION
 // ==========================================
 
 void AWaveManager::CheckWaveCompletion()
 {
-    if (!bSpawningFinished || AliveEnemies > 0)
+    // Spawning must be finished.
+    if (!bSpawningFinished)
+    {
+        return;
+    }
+
+    // All enemies must be dead.
+    if (AliveEnemies > 0)
     {
         return;
     }
@@ -158,7 +188,12 @@ void AWaveManager::CheckWaveCompletion()
         TEXT("[WaveManager] Wave %d completed!"),
         GetCurrentWaveNumber());
 
+    // Notify day/night and other systems.
     OnWaveCompleted.Broadcast(GetCurrentWaveNumber());
+
+    // ======================================
+    // LAST WAVE
+    // ======================================
 
     if (CurrentWaveIndex == Waves.Num() - 1)
     {
@@ -166,12 +201,41 @@ void AWaveManager::CheckWaveCompletion()
             TEXT("[WaveManager] ALL WAVES COMPLETED!"));
 
         OnAllWavesCompleted.Broadcast();
+
+        return;
     }
+
+    // ======================================
+    // SCHEDULE NEXT WAVE
+    // ======================================
+
+    // A listener of OnWaveCompleted may have
+    // already started the next wave.
+    if (WaveState != EWaveState::Completed)
+    {
+        return;
+    }
+
+    const float Delay = FMath::Max(
+        0.1f,
+        TimeBetweenWaves
+    );
+
+    UE_LOG(LogTemp, Warning,
+        TEXT("[WaveManager] Next wave starts in %.1f seconds"),
+        Delay);
+
+    GetWorldTimerManager().SetTimer(
+        NextWaveTimerHandle,
+        this,
+        &AWaveManager::StartNextWave,
+        Delay,
+        false
+    );
 }
 
-
 // ==========================================
-// GETTERS
+// GET CURRENT WAVE NUMBER
 // ==========================================
 
 int32 AWaveManager::GetCurrentWaveNumber() const
@@ -179,6 +243,9 @@ int32 AWaveManager::GetCurrentWaveNumber() const
     return CurrentWaveIndex + 1;
 }
 
+// ==========================================
+// GET TOTAL WAVES
+// ==========================================
 
 int32 AWaveManager::GetTotalWaves() const
 {

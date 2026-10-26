@@ -1,11 +1,14 @@
 
 #include "AI/EnemySwordsmanAI.h"
 #include "AI/EnemySwordsmanAnimInstance.h"
-
+#include "Navigation/PathFollowingComponent.h"
 #include "Construction/RICBuilding.h"
 #include "Construction/RICBuildTypes.h"
 
 #include "AIController.h"
+#include "NavigationSystem.h"
+#include "NavigationPath.h"
+
 #include "Engine/World.h"
 #include "Engine/DamageEvents.h"
 #include "GameFramework/DamageType.h"
@@ -74,6 +77,7 @@ void AEnemySwordsmanAI::CheckWallAhead()
     if (!IsAlive() ||
         bAttackingWall ||
         bAttackingCapitol ||
+        bAvoidingWall ||
         !IsValid(Capitol))
     {
         return;
@@ -135,15 +139,354 @@ void AEnemySwordsmanAI::CheckWallAhead()
 
 void AEnemySwordsmanAI::OnObstacleDetected(AActor* Obstacle)
 {
-    if (!IsAlive() || !IsValidWall(Obstacle))
+    if (!IsAlive() ||
+        !IsValidWall(Obstacle) ||
+        bAttackingWall ||
+        bAvoidingWall)
     {
         return;
+    }
+
+    const float RandomValue =
+        FMath::FRandRange(0.0f, 100.0f);
+
+    const float AttackProbability =
+        FMath::Clamp(WallAttackChance, 0.0f, 100.0f);
+
+    if (RandomValue < AttackProbability)
+    {
+        // ==================================
+        // ATTACK WALL
+        // ==================================
+
+        UE_LOG(
+            LogTemp,
+            Warning,
+            TEXT("[Swordsman] Decision: ATTACK | Wall: %s | Roll: %.1f"),
+            *Obstacle->GetName(),
+            RandomValue
+        );
+
+        StopCapitolAttack();
+
+        StartWallAttack(Obstacle);
+    }
+    else
+    {
+        // ==================================
+        // AVOID WALL
+        // ==================================
+
+        UE_LOG(
+            LogTemp,
+            Warning,
+            TEXT("[Swordsman] Decision: AVOID | Wall: %s | Roll: %.1f"),
+            *Obstacle->GetName(),
+            RandomValue
+        );
+
+        if (!TryAvoidWall(Obstacle))
+        {
+            // No valid avoidance route was found.
+            // Fall back to attacking the obstacle.
+
+            UE_LOG(
+                LogTemp,
+                Warning,
+                TEXT("[Swordsman] Avoidance failed. Attacking wall.")
+            );
+
+            StartWallAttack(Obstacle);
+        }
+    }
+}
+
+// ==========================================
+// TRY AVOID WALL
+// ==========================================
+
+bool AEnemySwordsmanAI::TryAvoidWall(AActor* Wall)
+{
+    if (!IsAlive() ||
+        !IsValidWall(Wall) ||
+        !IsValid(Capitol))
+    {
+        return false;
+    }
+
+    AAIController* EnemyController =
+        Cast<AAIController>(GetController());
+
+    UNavigationSystemV1* NavSys =
+        FNavigationSystem::GetCurrent<UNavigationSystemV1>(
+            GetWorld()
+        );
+
+    if (!EnemyController || !NavSys)
+    {
+        return false;
+    }
+
+    const FVector EnemyLocation = GetActorLocation();
+    const FVector WallLocation = Wall->GetActorLocation();
+    const FVector CapitolLocation = Capitol->GetActorLocation();
+
+    FVector Forward =
+        CapitolLocation - EnemyLocation;
+
+    Forward.Z = 0.0f;
+
+    if (!Forward.Normalize())
+    {
+        return false;
+    }
+
+    const FVector Right =
+        FVector::CrossProduct(
+            FVector::UpVector,
+            Forward
+        ).GetSafeNormal();
+
+    const float Distance =
+        FMath::Max(WallAvoidanceDistance, 50.0f);
+
+    // Search for points on both sides of the wall,
+    // slightly beyond its center toward the Capitol.
+
+    const FVector ForwardOffset =
+        Forward * Distance * 0.5f;
+
+    const FVector LeftCandidate =
+        WallLocation - Right * Distance + ForwardOffset;
+
+    const FVector RightCandidate =
+        WallLocation + Right * Distance + ForwardOffset;
+
+    const FVector Candidates[2] =
+    {
+        LeftCandidate,
+        RightCandidate
+    };
+
+    bool bFoundDestination = false;
+
+    FVector BestDestination = FVector::ZeroVector;
+
+    float BestScore = TNumericLimits<float>::Max();
+
+    for (const FVector& Candidate : Candidates)
+    {
+        FNavLocation NavLocation;
+
+        const bool bProjected =
+            NavSys->ProjectPointToNavigation(
+                Candidate,
+                NavLocation,
+                FVector(150.0f, 150.0f, 250.0f)
+            );
+
+        if (!bProjected)
+        {
+            continue;
+        }
+
+        UNavigationPath* Path =
+            NavSys->FindPathToLocationSynchronously(
+                GetWorld(),
+                EnemyLocation,
+                NavLocation.Location,
+                this
+            );
+
+        if (!IsValid(Path) ||
+            !Path->IsValid() ||
+            Path->IsPartial())
+        {
+            continue;
+        }
+
+        const TArray<FVector>& Points =
+            Path->PathPoints;
+
+        if (Points.Num() < 2)
+        {
+            continue;
+        }
+
+        float PathLength = 0.0f;
+
+        for (int32 Index = 1; Index < Points.Num(); ++Index)
+        {
+            PathLength += FVector::Dist(
+                Points[Index - 1],
+                Points[Index]
+            );
+        }
+
+        // Prefer a shorter path to the waypoint,
+        // with a small preference for proximity
+        // to the final objective.
+
+        const float Score =
+            PathLength +
+            FVector::Dist2D(
+                NavLocation.Location,
+                CapitolLocation
+            ) * 0.2f;
+
+        if (Score < BestScore)
+        {
+            BestScore = Score;
+            BestDestination = NavLocation.Location;
+            bFoundDestination = true;
+        }
+    }
+
+    if (!bFoundDestination)
+    {
+        return false;
     }
 
     StopCapitolAttack();
     StopMovement();
 
-    StartWallAttack(Obstacle);
+    const EPathFollowingRequestResult::Type MoveResult =
+        EnemyController->MoveToLocation(
+            BestDestination,
+            75.0f,
+            true,
+            true,
+            true,
+            false,
+            nullptr,
+            true
+        );
+
+    if (MoveResult ==
+        EPathFollowingRequestResult::Type::Failed)
+    {
+        return false;
+    }
+
+    bAvoidingWall = true;
+
+    AvoidedWall = Cast<ARICBuilding>(Wall);
+
+    AvoidanceDestination = BestDestination;
+
+    AvoidanceStartTime =
+        GetWorld()->GetTimeSeconds();
+
+    GetWorldTimerManager().SetTimer(
+        WallAvoidanceTimer,
+        this,
+        &AEnemySwordsmanAI::UpdateWallAvoidance,
+        0.2f,
+        true
+    );
+
+    UE_LOG(
+        LogTemp,
+        Warning,
+        TEXT("[Swordsman] Avoiding wall: %s | Destination: %s"),
+        *Wall->GetName(),
+        *BestDestination.ToString()
+    );
+
+    return true;
+}
+
+// ==========================================
+// UPDATE WALL AVOIDANCE
+// ==========================================
+
+void AEnemySwordsmanAI::UpdateWallAvoidance()
+{
+    if (!IsAlive())
+    {
+        StopWallAvoidance();
+        return;
+    }
+
+    const float Distance =
+        FVector::Dist2D(
+            GetActorLocation(),
+            AvoidanceDestination
+        );
+
+    const float ElapsedTime =
+        GetWorld()->GetTimeSeconds() -
+        AvoidanceStartTime;
+
+    if (Distance <= 100.0f)
+    {
+        UE_LOG(
+            LogTemp,
+            Warning,
+            TEXT("[Swordsman] Avoidance waypoint reached")
+        );
+
+        StopWallAvoidance();
+        MoveToTarget();
+        return;
+    }
+
+    if (ElapsedTime >=
+        FMath::Max(WallAvoidanceTimeout, 0.5f))
+    {
+        UE_LOG(
+            LogTemp,
+            Warning,
+            TEXT("[Swordsman] Avoidance timed out")
+        );
+
+        ARICBuilding* Wall = AvoidedWall.Get();
+
+        StopWallAvoidance();
+
+        // If still blocked, attack the wall rather
+        // than remaining stuck indefinitely.
+
+        if (IsValidWall(Wall))
+        {
+            const float WallDistance =
+                FVector::Dist2D(
+                    GetActorLocation(),
+                    Wall->GetActorLocation()
+                );
+
+            if (WallDistance <=
+                FMath::Max(
+                    AttackRange,
+                    WallDetectionDistance
+                ))
+            {
+                StartWallAttack(Wall);
+                return;
+            }
+        }
+
+        MoveToTarget();
+    }
+}
+
+// ==========================================
+// STOP WALL AVOIDANCE
+// ==========================================
+
+void AEnemySwordsmanAI::StopWallAvoidance()
+{
+    GetWorldTimerManager().ClearTimer(
+        WallAvoidanceTimer
+    );
+
+    bAvoidingWall = false;
+
+    AvoidedWall.Reset();
+
+    AvoidanceDestination = FVector::ZeroVector;
+
+    AvoidanceStartTime = 0.0f;
 }
 
 // ==========================================
@@ -162,7 +505,9 @@ void AEnemySwordsmanAI::StartWallAttack(AActor* Wall)
         return;
     }
 
+    StopWallAvoidance();
     StopWallAttack();
+    StopCapitolAttack();
 
     TargetWall = Cast<ARICBuilding>(Wall);
     bAttackingWall = true;
@@ -172,7 +517,7 @@ void AEnemySwordsmanAI::StartWallAttack(AActor* Wall)
     UE_LOG(
         LogTemp,
         Warning,
-        TEXT("[Swordsman] Wall detected: %s"),
+        TEXT("[Swordsman] Wall attack started: %s"),
         *Wall->GetName()
     );
 
@@ -205,10 +550,11 @@ void AEnemySwordsmanAI::AttackWall()
         return;
     }
 
-    const float Distance = FVector::Dist2D(
-        GetActorLocation(),
-        Wall->GetActorLocation()
-    );
+    const float Distance =
+        FVector::Dist2D(
+            GetActorLocation(),
+            Wall->GetActorLocation()
+        );
 
     const float AllowedDistance =
         FMath::Max(
@@ -225,7 +571,9 @@ void AEnemySwordsmanAI::AttackWall()
 
     PlayAttackAnimation();
 
-    FDamageEvent DamageEvent(UDamageType::StaticClass());
+    FDamageEvent DamageEvent(
+        UDamageType::StaticClass()
+    );
 
     const float AppliedDamage =
         Wall->TakeDamage(
@@ -255,7 +603,9 @@ void AEnemySwordsmanAI::AttackWall()
 
 void AEnemySwordsmanAI::StopWallAttack()
 {
-    GetWorldTimerManager().ClearTimer(WallAttackTimer);
+    GetWorldTimerManager().ClearTimer(
+        WallAttackTimer
+    );
 
     bAttackingWall = false;
     TargetWall = nullptr;
@@ -304,10 +654,11 @@ void AEnemySwordsmanAI::CheckCapitolDistance()
         return;
     }
 
-    const float Distance = FVector::Dist2D(
-        GetActorLocation(),
-        Building->GetActorLocation()
-    );
+    const float Distance =
+        FVector::Dist2D(
+            GetActorLocation(),
+            Building->GetActorLocation()
+        );
 
     if (Distance <= AttackRange)
     {
@@ -332,6 +683,8 @@ void AEnemySwordsmanAI::StartCapitolAttack()
     {
         return;
     }
+
+    StopWallAvoidance();
 
     bAttackingCapitol = true;
 
@@ -369,10 +722,11 @@ void AEnemySwordsmanAI::AttackCapitol()
         return;
     }
 
-    const float Distance = FVector::Dist2D(
-        GetActorLocation(),
-        Building->GetActorLocation()
-    );
+    const float Distance =
+        FVector::Dist2D(
+            GetActorLocation(),
+            Building->GetActorLocation()
+        );
 
     if (Distance > AttackRange)
     {
@@ -383,7 +737,9 @@ void AEnemySwordsmanAI::AttackCapitol()
 
     PlayAttackAnimation();
 
-    FDamageEvent DamageEvent(UDamageType::StaticClass());
+    FDamageEvent DamageEvent(
+        UDamageType::StaticClass()
+    );
 
     const float AppliedDamage =
         Building->TakeDamage(
@@ -418,7 +774,9 @@ void AEnemySwordsmanAI::AttackCapitol()
 
 void AEnemySwordsmanAI::StopCapitolAttack()
 {
-    GetWorldTimerManager().ClearTimer(CapitolAttackTimer);
+    GetWorldTimerManager().ClearTimer(
+        CapitolAttackTimer
+    );
 
     bAttackingCapitol = false;
 
@@ -489,9 +847,15 @@ void AEnemySwordsmanAI::Die()
         return;
     }
 
-    GetWorldTimerManager().ClearTimer(WallCheckTimer);
-    GetWorldTimerManager().ClearTimer(CapitolCheckTimer);
+    GetWorldTimerManager().ClearTimer(
+        WallCheckTimer
+    );
 
+    GetWorldTimerManager().ClearTimer(
+        CapitolCheckTimer
+    );
+
+    StopWallAvoidance();
     StopCapitolAttack();
     StopWallAttack();
     StopMovement();
@@ -530,10 +894,25 @@ void AEnemySwordsmanAI::EndPlay(
     const EEndPlayReason::Type EndPlayReason
 )
 {
-    GetWorldTimerManager().ClearTimer(WallCheckTimer);
-    GetWorldTimerManager().ClearTimer(WallAttackTimer);
-    GetWorldTimerManager().ClearTimer(CapitolCheckTimer);
-    GetWorldTimerManager().ClearTimer(CapitolAttackTimer);
+    GetWorldTimerManager().ClearTimer(
+        WallCheckTimer
+    );
+
+    GetWorldTimerManager().ClearTimer(
+        WallAttackTimer
+    );
+
+    GetWorldTimerManager().ClearTimer(
+        WallAvoidanceTimer
+    );
+
+    GetWorldTimerManager().ClearTimer(
+        CapitolCheckTimer
+    );
+
+    GetWorldTimerManager().ClearTimer(
+        CapitolAttackTimer
+    );
 
     Super::EndPlay(EndPlayReason);
 }

@@ -3,10 +3,10 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
+#include "TimerManager.h"
 #include "WaveManager.generated.h"
 
 class ATargetPoint;
-
 
 // ==========================================
 // WAVE STATE
@@ -21,7 +21,6 @@ enum class EWaveState : uint8
     Completed   UMETA(DisplayName = "Completed")
 };
 
-
 // ==========================================
 // ONE SPAWN GROUP
 // ==========================================
@@ -31,11 +30,9 @@ struct FWaveSpawnGroup
 {
     GENERATED_BODY()
 
-    // Spawn point placed on the level
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spawn Group")
     TObjectPtr<ATargetPoint> SpawnPoint = nullptr;
 
-    // Enemies spawning from this specific point
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spawn Group",
         meta = (ClampMin = "0"))
     int32 SwordsmanCount = 0;
@@ -44,7 +41,6 @@ struct FWaveSpawnGroup
         meta = (ClampMin = "0"))
     int32 ArcherCount = 0;
 };
-
 
 // ==========================================
 // ONE WAVE
@@ -55,16 +51,13 @@ struct FWaveData
 {
     GENERATED_BODY()
 
-    // Each group has its own point and enemy counts
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Wave")
     TArray<FWaveSpawnGroup> SpawnGroups;
 
-    // Shared interval between spawn attempts
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Wave",
         meta = (ClampMin = "0.1"))
     float SpawnInterval = 1.5f;
 };
-
 
 // ==========================================
 // EVENTS
@@ -86,7 +79,6 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE(
     FOnAllWavesCompleted
 );
 
-
 // ==========================================
 // WAVE MANAGER
 // ==========================================
@@ -100,10 +92,15 @@ public:
 
     AWaveManager();
 
-    // Configure on the placed actor, because
-    // SpawnGroups reference TargetPoints from the level.
+    // All waves configured on the placed actor.
     UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Waves")
     TArray<FWaveData> Waves;
+
+    // Delay between completed waves.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite,
+        Category = "Waves|Timing",
+        meta = (ClampMin = "0.1"))
+    float TimeBetweenWaves = 5.0f;
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Waves")
     int32 CurrentWaveIndex = -1;
@@ -117,8 +114,10 @@ public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Waves")
     bool bSpawningFinished = false;
 
+    // ======================================
+    // EVENTS
+    // ======================================
 
-    // Events used by other game systems
     UPROPERTY(BlueprintAssignable, Category = "Waves|Events")
     FOnWaveStarted OnWaveStarted;
 
@@ -128,6 +127,9 @@ public:
     UPROPERTY(BlueprintAssignable, Category = "Waves|Events")
     FOnAllWavesCompleted OnAllWavesCompleted;
 
+    // ======================================
+    // FUNCTIONS
+    // ======================================
 
     UFUNCTION(BlueprintCallable, Category = "Waves")
     void StartNextWave();
@@ -147,13 +149,14 @@ public:
     UFUNCTION(BlueprintPure, Category = "Waves")
     int32 GetTotalWaves() const;
 
-
 protected:
 
     virtual void BeginPlay() override;
-
+    virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 private:
 
     void CheckWaveCompletion();
+
+    FTimerHandle NextWaveTimerHandle;
 };

@@ -8,13 +8,15 @@
 #include "Navigation/PathFollowingComponent.h"
 
 #include "GameFramework/CharacterMovementComponent.h"
+#include "GameFramework/PlayerController.h"
 
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 
+#include "Construction/RICMoneyComponent.h"
+
 #include "Engine/World.h"
 #include "TimerManager.h"
-
 
 // ==========================================
 // CONSTRUCTOR
@@ -32,7 +34,6 @@ AEnemyAI::AEnemyAI()
     GetCharacterMovement()->MaxWalkSpeed = 300.0f;
 }
 
-
 // ==========================================
 // BEGIN PLAY
 // ==========================================
@@ -40,6 +41,8 @@ AEnemyAI::AEnemyAI()
 void AEnemyAI::BeginPlay()
 {
     Super::BeginPlay();
+
+    bKillRewardGranted = false;
 
     GetCharacterMovement()->MaxWalkSpeed = MovementSpeed;
 
@@ -62,7 +65,6 @@ void AEnemyAI::BeginPlay()
     }
 }
 
-
 // ==========================================
 // WAIT FOR AI INITIALIZATION
 // ==========================================
@@ -78,7 +80,6 @@ void AEnemyAI::TryStartMovement()
         return;
     }
 
-    // Target may be assigned after BeginPlay.
     if (!IsValid(CurrentTarget))
     {
         return;
@@ -87,7 +88,6 @@ void AEnemyAI::TryStartMovement()
     AAIController* EnemyController =
         Cast<AAIController>(GetController());
 
-    // Wait until the AIController possesses the enemy.
     if (!EnemyController)
     {
         return;
@@ -99,7 +99,6 @@ void AEnemyAI::TryStartMovement()
 
     MoveToTarget();
 }
-
 
 // ==========================================
 // ASSIGN CAPITOL
@@ -135,7 +134,6 @@ void AEnemyAI::SetCapitol(AActor* NewCapitol)
     }
 }
 
-
 // ==========================================
 // GET CURRENT TARGET
 // ==========================================
@@ -144,7 +142,6 @@ AActor* AEnemyAI::GetCurrentTarget() const
 {
     return CurrentTarget.Get();
 }
-
 
 // ==========================================
 // MOVE TO TARGET
@@ -193,7 +190,6 @@ void AEnemyAI::MoveToTarget()
     const FVector TargetLocation =
         CurrentTarget->GetActorLocation();
 
-
     // ======================================
     // PROJECT ENEMY ON NAVMESH
     // ======================================
@@ -217,7 +213,6 @@ void AEnemyAI::MoveToTarget()
 
         return;
     }
-
 
     // ======================================
     // FIND NAVIGATION POINT NEAR TARGET
@@ -248,7 +243,6 @@ void AEnemyAI::MoveToTarget()
         return;
     }
 
-
     // ======================================
     // CHECK PATH
     // ======================================
@@ -273,7 +267,6 @@ void AEnemyAI::MoveToTarget()
 
         return;
     }
-
 
     // ======================================
     // DIAGNOSTICS
@@ -334,7 +327,6 @@ void AEnemyAI::MoveToTarget()
         *TargetNavLocation.Location.ToString()
     );
 
-
     // ======================================
     // START MOVEMENT
     // ======================================
@@ -391,7 +383,6 @@ void AEnemyAI::MoveToTarget()
     );
 }
 
-
 // ==========================================
 // STOP MOVEMENT
 // ==========================================
@@ -407,7 +398,6 @@ void AEnemyAI::StopMovement()
     }
 }
 
-
 // ==========================================
 // OBSTACLE DETECTION
 // ==========================================
@@ -417,6 +407,76 @@ void AEnemyAI::OnObstacleDetected(AActor* Obstacle)
     // Implemented by derived enemy classes.
 }
 
+// ==========================================
+// GRANT KILL REWARD
+// ==========================================
+
+void AEnemyAI::GrantKillReward()
+{
+    // Reward must only be granted once.
+    if (bKillRewardGranted)
+    {
+        return;
+    }
+
+    bKillRewardGranted = true;
+
+    // Zero reward is allowed.
+    if (KillReward <= 0)
+    {
+        return;
+    }
+
+    UWorld* World = GetWorld();
+
+    if (!World)
+    {
+        return;
+    }
+
+    // The money component belongs to the
+    // player's controller, not the enemy.
+    APlayerController* PlayerController =
+        World->GetFirstPlayerController();
+
+    if (!IsValid(PlayerController))
+    {
+        UE_LOG(
+            LogTemp,
+            Warning,
+            TEXT("[EnemyAI] Kill reward failed: PlayerController not found")
+        );
+
+        return;
+    }
+
+    URICMoneyComponent* MoneyComponent =
+        PlayerController->FindComponentByClass<URICMoneyComponent>();
+
+    if (!IsValid(MoneyComponent))
+    {
+        UE_LOG(
+            LogTemp,
+            Warning,
+            TEXT("[EnemyAI] Kill reward failed: MoneyComponent not found")
+        );
+
+        return;
+    }
+
+    const int32 AddedMoney =
+        MoneyComponent->AddMoney(KillReward);
+
+    UE_LOG(
+        LogTemp,
+        Warning,
+        TEXT("[EnemyAI] Enemy killed: %s | Reward: %d | Added: %d | Balance: %d"),
+        *GetName(),
+        KillReward,
+        AddedMoney,
+        MoneyComponent->CurrentMoney
+    );
+}
 
 // ==========================================
 // DEATH
@@ -424,9 +484,8 @@ void AEnemyAI::OnObstacleDetected(AActor* Obstacle)
 
 void AEnemyAI::Die()
 {
-    // ReceiveDamage() reduces HP to zero before
-    // calling Die(). Therefore, use bIsDead
-    // instead of IsAlive() to prevent duplicates.
+    // ReceiveDamage() reduces HP to zero
+    // before calling Die().
     if (bIsDead)
     {
         return;
@@ -440,8 +499,7 @@ void AEnemyAI::Die()
     // Stop active AI movement.
     StopMovement();
 
-    // AIBase marks this enemy as dead:
-    // bIsDead = true, CurrentHP = 0.
+    // Mark enemy as dead.
     Super::Die();
 
     UE_LOG(
@@ -451,12 +509,13 @@ void AEnemyAI::Die()
         *GetName()
     );
 
-    // Notify EnemySpawner before scheduling removal.
-    // EnemySpawner forwards this to WaveManager.
+    // Award money once for this death.
+    GrantKillReward();
+
+    // Notify spawner and WaveManager.
     OnEnemyDied.Broadcast(this);
 
-    // A dead enemy must no longer block movement
-    // or occupy a spawn location.
+    // Dead enemy no longer blocks movement.
     if (UCapsuleComponent* Capsule = GetCapsuleComponent())
     {
         Capsule->SetCollisionEnabled(
@@ -471,7 +530,7 @@ void AEnemyAI::Die()
         );
     }
 
-    // Remove actor after the configured delay.
+    // Remove dead enemy after delay.
     const float ActualDestroyDelay =
         FMath::Max(DeathDestroyDelay, 0.01f);
 
@@ -485,7 +544,6 @@ void AEnemyAI::Die()
         ActualDestroyDelay
     );
 }
-
 
 // ==========================================
 // END PLAY
