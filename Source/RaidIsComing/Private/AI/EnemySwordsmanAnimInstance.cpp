@@ -1,5 +1,6 @@
 
 #include "AI/EnemySwordsmanAnimInstance.h"
+#include "AI/EnemySwordsmanAI.h"
 
 #include "GameFramework/Pawn.h"
 #include "GameFramework/Character.h"
@@ -29,19 +30,41 @@ void UEnemySwordsmanAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
         return;
     }
 
-    // Get horizontal movement speed
+    AEnemySwordsmanAI* Swordsman =
+        Cast<AEnemySwordsmanAI>(OwnerPawn);
+
+    if (IsValid(Swordsman))
+    {
+        bIsDead = !Swordsman->IsAlive();
+    }
+
+    if (bIsDead)
+    {
+        Speed = 0.0f;
+        bIsMoving = false;
+        bIsAttacking = false;
+        return;
+    }
+
     Speed = OwnerPawn->GetVelocity().Size2D();
 
-    // Ignore very small velocity fluctuations
     bIsMoving = Speed > 3.0f;
 }
 
 void UEnemySwordsmanAnimInstance::PlayAttackAnimation()
 {
+    if (bIsDead)
+    {
+        return;
+    }
+
     if (!AttackMontage)
     {
-        UE_LOG(LogTemp, Warning,
-            TEXT("[EnemyAnim] AttackMontage is not assigned!"));
+        UE_LOG(
+            LogTemp,
+            Warning,
+            TEXT("[EnemyAnim] AttackMontage is not assigned!")
+        );
 
         return;
     }
@@ -59,8 +82,11 @@ void UEnemySwordsmanAnimInstance::PlayAttackAnimation()
     {
         bIsAttacking = false;
 
-        UE_LOG(LogTemp, Warning,
-            TEXT("[EnemyAnim] Failed to play attack montage"));
+        UE_LOG(
+            LogTemp,
+            Warning,
+            TEXT("[EnemyAnim] Failed to play attack montage")
+        );
     }
 }
 
@@ -68,7 +94,7 @@ void UEnemySwordsmanAnimInstance::StopAttackAnimation()
 {
     if (AttackMontage && Montage_IsPlaying(AttackMontage))
     {
-        Montage_Stop(0.2f, AttackMontage);
+        Montage_Stop(0.0f, AttackMontage);
     }
 
     bIsAttacking = false;
@@ -76,5 +102,11 @@ void UEnemySwordsmanAnimInstance::StopAttackAnimation()
 
 void UEnemySwordsmanAnimInstance::SetAttacking(bool bNewAttacking)
 {
+    if (bIsDead)
+    {
+        bIsAttacking = false;
+        return;
+    }
+
     bIsAttacking = bNewAttacking;
 }
