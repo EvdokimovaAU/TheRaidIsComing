@@ -199,6 +199,12 @@ void ASearchlight::BeginPlay()
     {
         UE_LOG(LogTemp, Warning, TEXT("Searchlight %s: assign DayNightManager on the level instance."), *GetName());
     }
+    if (bRotateOnlyHorizontally)
+    {
+        const FRotator InitialRotation = SpotLight->GetComponentRotation();
+        SpotLight->SetWorldRotation(FRotator(
+            FMath::Clamp(FixedPitch, -89.0f, -1.0f), InitialRotation.Yaw, 0.0f));
+    }
     RefreshActivation();
 
     // Only one local player is used in this project. Bind the key on the
@@ -261,12 +267,22 @@ void ASearchlight::UpdateAimFromCursor()
         return;
     }
 
-    FHitResult Hit;
-    if (Controller->GetHitResultUnderCursorByChannel(
-        UEngineTypes::ConvertToTraceType(ECC_Visibility), false, Hit))
+    FVector RayOrigin;
+    FVector RayDirection;
+    if (!Controller->DeprojectMousePositionToWorld(RayOrigin, RayDirection)
+        || RayOrigin.ContainsNaN() || RayDirection.ContainsNaN()
+        || FMath::Abs(RayDirection.Z) < 0.0001)
     {
-        SetAimLocation(Hit.ImpactPoint);
+        return;
     }
+
+    const double PlaneZ = GetActorLocation().Z + AimPlaneHeightOffset;
+    const double Distance = (PlaneZ - RayOrigin.Z) / RayDirection.Z;
+    if (!FMath::IsFinite(Distance) || Distance < 0.0)
+    {
+        return;
+    }
+    SetAimLocation(RayOrigin + RayDirection * Distance);
 }
 
 void ASearchlight::ApplySettings()
@@ -333,13 +349,29 @@ void ASearchlight::Tick(float DeltaSeconds)
         return;
     }
     const FVector Direction = AimLocation - SpotLight->GetComponentLocation();
-    if (!Direction.IsNearlyZero())
+    FRotator CurrentRotation = SpotLight->GetComponentRotation();
+    FRotator TargetRotation = CurrentRotation;
+    if (bRotateOnlyHorizontally)
     {
-        const FRotator Rotation = FMath::RInterpConstantTo(
-            SpotLight->GetComponentRotation(), Direction.Rotation(),
-            DeltaSeconds, FMath::Max(1.0f, RotationSpeed));
-        SpotLight->SetWorldRotation(Rotation);
+        // Near the tower center the cursor has no stable azimuth: retain yaw.
+        if (Direction.SizeSquared2D() > 1.0)
+        {
+            TargetRotation.Yaw = FMath::RadiansToDegrees(
+                FMath::Atan2(Direction.Y, Direction.X));
+        }
+        TargetRotation.Pitch = FMath::Clamp(FixedPitch, -89.0f, -1.0f);
+        TargetRotation.Roll = 0.0f;
+        CurrentRotation.Pitch = TargetRotation.Pitch;
+        CurrentRotation.Roll = 0.0f;
     }
+    else
+    {
+        if (Direction.IsNearlyZero()) return;
+        TargetRotation = Direction.Rotation();
+    }
+    SpotLight->SetWorldRotation(FMath::RInterpConstantTo(
+        CurrentRotation, TargetRotation, DeltaSeconds,
+        FMath::Max(1.0f, RotationSpeed)));
 }
 
 

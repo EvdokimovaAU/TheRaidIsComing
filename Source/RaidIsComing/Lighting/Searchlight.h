@@ -66,6 +66,19 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Searchlight|Settings")
     FLinearColor LightColor = FLinearColor::White;
 
+    // При включении мышь задает только направление по кругу.
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Searchlight|Aiming")
+    bool bRotateOnlyHorizontally = true;
+
+    // Постоянный мировой наклон вниз в режиме вращения по кругу.
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Searchlight|Aiming", meta = (ClampMin = "-89", ClampMax = "-1", Units = "deg"))
+    float FixedPitch = -45.0f;
+
+    // Высота плоскости наведения относительно позиции актора (в мировых см).
+    // Крыши и декорации не влияют на положение курсора на этой плоскости.
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Searchlight|Aiming", meta = (Units = "cm"))
+    float AimPlaneHeightOffset = 0.0f;
+
     // Вкл. по умолчанию для одиночной игры. Отключить, если ввод
     // будет перенесён в PlayerController / Enhanced Input.
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Searchlight|Input")
