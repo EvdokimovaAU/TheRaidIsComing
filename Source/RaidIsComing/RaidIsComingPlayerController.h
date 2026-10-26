@@ -70,7 +70,9 @@ protected:
 
     bool bSuppressDestinationUntilRelease = false;
 
+    virtual void BeginPlay() override;
     virtual void SetupInputComponent() override;
+    void OnConstructionClick();
 
     void StartBarracksPreview();
     void StartArcherTowerPreview();

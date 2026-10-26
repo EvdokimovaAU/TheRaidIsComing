@@ -43,9 +43,31 @@ ARaidIsComingPlayerController::ARaidIsComingPlayerController()
     FollowTime = 0.0f;
 }
 
+void ARaidIsComingPlayerController::BeginPlay()
+{
+    Super::BeginPlay();
+    UE_LOG(LogTemp, Warning,
+        TEXT("[RIC Input] BeginPlay Controller=%s Class=%s Local=%d"),
+        *GetName(), *GetNameSafe(GetClass()), IsLocalPlayerController());
+}
+
+void ARaidIsComingPlayerController::OnConstructionClick()
+{
+    // Fallback for maps without the old point-and-click Input Action.
+    // Outside construction this handler does not move the camera pawn.
+    if (ConstructionComponent && ConstructionComponent->IsBuildingMode())
+    {
+        const bool bPlaced = ConstructionComponent->TryPlacePreview();
+        UE_LOG(LogTemp, Warning, TEXT("[RIC Input] LMB placement=%d"), bPlaced);
+    }
+}
+
 void ARaidIsComingPlayerController::SetupInputComponent()
 {
     Super::SetupInputComponent();
+    UE_LOG(LogTemp, Warning,
+        TEXT("[RIC Input] Setup Controller=%s Local=%d Input=%s"),
+        *GetName(), IsLocalPlayerController(), *GetNameSafe(InputComponent));
 
     if (!IsLocalPlayerController() || !InputComponent)
     {
@@ -84,7 +106,20 @@ void ARaidIsComingPlayerController::SetupInputComponent()
         IE_Pressed,
         this,
         &ARaidIsComingPlayerController::CancelBuildingPreview
-    );
+    ).bConsumeInput = false;
+
+    // Diana's pawn also needs RMB for isRotate.
+    // Use one mouse placement path: fallback OR the existing Enhanced Input action.
+    if (!SetDestinationClickAction || !DefaultMappingContext)
+    {
+        InputComponent->BindKey(
+            EKeys::LeftMouseButton,
+            IE_Pressed,
+            this,
+            &ARaidIsComingPlayerController::OnConstructionClick
+        ).bConsumeInput = false;
+        UE_LOG(LogTemp, Warning, TEXT("[RIC Input] Direct construction LMB enabled."));
+    }
 
     // Контекст ввода для обычного движения.
     if (UEnhancedInputLocalPlayerSubsystem* Subsystem =
@@ -121,7 +156,7 @@ void ARaidIsComingPlayerController::SetupInputComponent()
     }
 
     // Управление мышью.
-    if (SetDestinationClickAction)
+    if (SetDestinationClickAction && DefaultMappingContext)
     {
         EnhancedInputComponent->BindAction(
             SetDestinationClickAction,
@@ -156,7 +191,7 @@ void ARaidIsComingPlayerController::SetupInputComponent()
         UE_LOG(
             LogRaidIsComing,
             Warning,
-            TEXT("SetDestinationClickAction is not assigned.")
+            TEXT("[RIC Input] Legacy mouse movement disabled: Input Action or Mapping Context missing. Construction uses direct LMB.")
         );
     }
 
@@ -195,18 +230,17 @@ void ARaidIsComingPlayerController::SetupInputComponent()
 
 void ARaidIsComingPlayerController::StartBarracksPreview()
 {
-    if (ConstructionComponent->StartPreview(BarracksClass))
-    {
-        StopMovement();
-
-        FollowTime = 0.0f;
-        bSuppressDestinationUntilRelease = true;
-    }
+    UE_LOG(LogTemp, Warning, TEXT("[RIC Input] E received. Pawn=%s BarracksClass=%s"),
+        *GetNameSafe(GetPawn()), *GetNameSafe(BarracksClass.Get()));
+    StartTowerPreview(BarracksClass);
 }
 
 void ARaidIsComingPlayerController::CancelBuildingPreview()
 {
-    ConstructionComponent->CancelPreview();
+    if (ConstructionComponent)
+    {
+        ConstructionComponent->CancelPreview();
+    }
 }
 
 void ARaidIsComingPlayerController::OnInputStarted()
@@ -364,7 +398,11 @@ void ARaidIsComingPlayerController::StartTowerPreview(
         return;
     }
 
-    if (ConstructionComponent->StartPreview(BuildingClass))
+    UE_LOG(LogTemp, Warning, TEXT("[RIC Input] Preview requested: %s"),
+        *GetNameSafe(BuildingClass.Get()));
+    const bool bStarted = ConstructionComponent->StartPreview(BuildingClass);
+    UE_LOG(LogTemp, Warning, TEXT("[RIC Input] Preview started=%d (visibility depends on valid zone/passage)."), bStarted);
+    if (bStarted)
     {
         StopMovement();
 
@@ -374,20 +412,6 @@ void ARaidIsComingPlayerController::StartTowerPreview(
 }
 void ARaidIsComingPlayerController::StartBarrierPreview()
 {
-    UE_LOG(LogTemp, Warning, TEXT("BARRIER TEST: key 3 received"));
-    if (!ConstructionComponent || !BarrierClass)
-    {
-        UE_LOG(
-            LogTemp,
-            Warning,
-            TEXT("Cannot select barrier: assign BarrierClass in BP_RICPlayerController."));
-        return;
-    }
-
-    if (ConstructionComponent->StartPreview(BarrierClass))
-    {
-        StopMovement();
-        FollowTime = 0.0f;
-        bSuppressDestinationUntilRelease = true;
-    }
+    UE_LOG(LogTemp, Warning, TEXT("[RIC Input] 3 received."));
+    StartTowerPreview(BarrierClass);
 }
