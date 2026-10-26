@@ -13,12 +13,7 @@ class RAIDISCOMING_API AEnemySwordsmanAI : public AEnemyAI
     GENERATED_BODY()
 
 public:
-
     AEnemySwordsmanAI();
-
-    // ======================================
-    // WALL SETTINGS
-    // ======================================
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AI|Wall")
     float WallAttackCooldown = 1.0f;
@@ -27,19 +22,11 @@ public:
     float WallDamage = 10.0f;
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AI|Wall")
-    float WallDetectionDistance = 180.0f;
+    float WallDetectionDistance = 220.0f;
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AI|Wall")
     float WallCheckInterval = 0.2f;
 
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AI|Wall")
-    TObjectPtr<ARICBuilding> TargetWall = nullptr;
-
-    // ======================================
-    // WALL DECISION SETTINGS
-    // ======================================
-
-    // 50 = 50% attack, 50% avoid
     UPROPERTY(
         EditAnywhere,
         BlueprintReadWrite,
@@ -48,28 +35,32 @@ public:
     )
     float WallAttackChance = 50.0f;
 
-    // Distance used to search for a waypoint
-    // beside the obstacle
-    UPROPERTY(
-        EditAnywhere,
-        BlueprintReadWrite,
-        Category = "AI|Wall|Decision",
-        meta = (ClampMin = "50.0")
-    )
+    UPROPERTY(EditAnywhere, BlueprintReadWrite,
+        Category = "AI|Wall|Decision")
     float WallAvoidanceDistance = 350.0f;
 
-    // Maximum duration of an avoidance attempt
-    UPROPERTY(
-        EditAnywhere,
-        BlueprintReadWrite,
-        Category = "AI|Wall|Decision",
-        meta = (ClampMin = "0.5")
-    )
+    UPROPERTY(EditAnywhere, BlueprintReadWrite,
+        Category = "AI|Wall|Decision")
     float WallAvoidanceTimeout = 5.0f;
 
-    // ======================================
-    // WALL COMBAT
-    // ======================================
+    // Local movement settings
+    UPROPERTY(EditAnywhere, BlueprintReadWrite,
+        Category = "AI|Wall|Approach")
+    float WallApproachSpeed = 250.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite,
+        Category = "AI|Wall|Approach")
+    float WallApproachTimeout = 6.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite,
+        Category = "AI|Wall|Approach")
+    float WallAttackDistance = 115.0f;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly,
+        Category = "AI|Wall")
+    TObjectPtr<ARICBuilding> TargetWall = nullptr;
+
+    virtual void Tick(float DeltaSeconds) override;
 
     virtual void OnObstacleDetected(AActor* Obstacle) override;
 
@@ -85,10 +76,6 @@ public:
     UFUNCTION(BlueprintCallable, Category = "AI|Wall")
     void OnWallDestroyed();
 
-    // ======================================
-    // CAPITOL COMBAT
-    // ======================================
-
     UFUNCTION(BlueprintCallable, Category = "AI|Capitol")
     void CheckCapitolDistance();
 
@@ -101,14 +88,9 @@ public:
     UFUNCTION(BlueprintCallable, Category = "AI|Capitol")
     void StopCapitolAttack();
 
-    // ======================================
-    // DEATH
-    // ======================================
-
     virtual void Die() override;
 
 protected:
-
     virtual void BeginPlay() override;
 
     virtual void EndPlay(
@@ -116,56 +98,40 @@ protected:
     ) override;
 
 private:
-
-    // ======================================
-    // WALL DETECTION
-    // ======================================
-
     void CheckWallAhead();
-
     bool IsValidWall(AActor* Actor) const;
-
-    // ======================================
-    // WALL AVOIDANCE
-    // ======================================
+    float GetDistanceToWall(const AActor* Wall) const;
+    FVector GetClosestWallPoint(const AActor* Wall) const;
+    bool HasFreePathToCapitol() const;
 
     bool TryAvoidWall(AActor* Wall);
-
     void UpdateWallAvoidance();
-
     void StopWallAvoidance();
+
+    void UpdateWallApproach(float DeltaSeconds);
+    void BeginWallDamage();
+    void StopWallApproach();
+
+    void PlayAttackAnimation();
+    void StopAttackAnimation();
 
     TWeakObjectPtr<ARICBuilding> AvoidedWall;
 
     FVector AvoidanceDestination = FVector::ZeroVector;
 
     bool bAvoidingWall = false;
+    bool bAttackingWall = false;
+    bool bApproachingWall = false;
+    bool bAttackingCapitol = false;
 
     float AvoidanceStartTime = 0.0f;
-
-    // ======================================
-    // ANIMATIONS
-    // ======================================
-
-    void PlayAttackAnimation();
-
-    void StopAttackAnimation();
-
-    // ======================================
-    // TIMERS
-    // ======================================
+    float ApproachStartTime = 0.0f;
+    float PreviousWallDistance = 0.0f;
+    float StuckTime = 0.0f;
 
     FTimerHandle WallCheckTimer;
     FTimerHandle WallAttackTimer;
     FTimerHandle WallAvoidanceTimer;
-
     FTimerHandle CapitolCheckTimer;
     FTimerHandle CapitolAttackTimer;
-
-    // ======================================
-    // STATES
-    // ======================================
-
-    bool bAttackingWall = false;
-    bool bAttackingCapitol = false;
 };
