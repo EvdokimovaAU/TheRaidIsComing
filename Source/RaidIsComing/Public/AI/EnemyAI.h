@@ -20,22 +20,11 @@ class RAIDISCOMING_API AEnemyAI : public AAIBase
     GENERATED_BODY()
 
 public:
-
     AEnemyAI();
-
-    // ======================================
-    // EVENTS
-    // ======================================
 
     UPROPERTY(BlueprintAssignable, Category = "AI|Events")
     FOnEnemyDied OnEnemyDied;
 
-    // ======================================
-    // REWARDS
-    // ======================================
-
-    // Money awarded when this enemy dies.
-    // Can be configured separately for each enemy Blueprint.
     UPROPERTY(
         EditAnywhere,
         BlueprintReadOnly,
@@ -44,26 +33,14 @@ public:
     )
     int32 KillReward = 50;
 
-    // ======================================
-    // TARGET
-    // ======================================
-
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI|Target")
     TObjectPtr<AActor> Capitol = nullptr;
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AI|Target")
     TObjectPtr<AActor> CurrentTarget = nullptr;
 
-    // ======================================
-    // NAVIGATION
-    // ======================================
-
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AI|Navigation")
     float RouteProgress = 0.0f;
-
-    // ======================================
-    // MOVEMENT SETTINGS
-    // ======================================
 
     UPROPERTY(
         EditAnywhere,
@@ -90,10 +67,6 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI|Movement")
     bool bAutoStartMovement = true;
 
-    // ======================================
-    // DEATH SETTINGS
-    // ======================================
-
     UPROPERTY(
         EditAnywhere,
         BlueprintReadWrite,
@@ -102,19 +75,11 @@ public:
     )
     float DeathDestroyDelay = 0.1f;
 
-    // ======================================
-    // TARGET METHODS
-    // ======================================
-
     UFUNCTION(BlueprintCallable, Category = "AI|Target")
     void SetCapitol(AActor* NewCapitol);
 
     UFUNCTION(BlueprintCallable, Category = "AI|Target")
     AActor* GetCurrentTarget() const;
-
-    // ======================================
-    // MOVEMENT METHODS
-    // ======================================
 
     UFUNCTION(BlueprintCallable, Category = "AI|Movement")
     virtual void MoveToTarget();
@@ -125,14 +90,9 @@ public:
     UFUNCTION(BlueprintCallable, Category = "AI|Movement")
     virtual void OnObstacleDetected(AActor* Obstacle);
 
-    // ======================================
-    // DEATH
-    // ======================================
-
     virtual void Die() override;
 
 protected:
-
     virtual void BeginPlay() override;
 
     virtual void EndPlay(
@@ -140,14 +100,12 @@ protected:
     ) override;
 
 private:
-
     FTimerHandle MovementStartTimer;
+    FTimerHandle NavigationRetryTimer;
 
-    // Prevents duplicate money rewards.
-    bool bKillRewardGranted = false;
-
+    void ScheduleNavigationRetry();
     void TryStartMovement();
-
-    // Awards money to the player.
     void GrantKillReward();
+
+    bool bKillRewardGranted = false;
 };

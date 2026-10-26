@@ -144,6 +144,29 @@ AActor* AEnemyAI::GetCurrentTarget() const
 }
 
 // ==========================================
+// NAVIGATION RETRY
+// ==========================================
+
+void AEnemyAI::ScheduleNavigationRetry()
+{
+    if (!IsAlive() || !IsValid(CurrentTarget) || !GetWorld())
+    {
+        return;
+    }
+
+    if (!GetWorldTimerManager().IsTimerActive(NavigationRetryTimer))
+    {
+        GetWorldTimerManager().SetTimer(
+            NavigationRetryTimer,
+            this,
+            &AEnemyAI::MoveToTarget,
+            0.5f,
+            true
+        );
+    }
+}
+
+// ==========================================
 // MOVE TO TARGET
 // ==========================================
 
@@ -165,6 +188,7 @@ void AEnemyAI::MoveToTarget()
             TEXT("[EnemyAI] AIController not found")
         );
 
+        ScheduleNavigationRetry();
         return;
     }
 
@@ -181,11 +205,11 @@ void AEnemyAI::MoveToTarget()
             TEXT("[EnemyAI] NavigationSystem not found")
         );
 
+        ScheduleNavigationRetry();
         return;
     }
 
-    const FVector EnemyLocation =
-        GetActorLocation();
+    const FVector EnemyLocation = GetActorLocation();
 
     const FVector TargetLocation =
         CurrentTarget->GetActorLocation();
@@ -211,6 +235,7 @@ void AEnemyAI::MoveToTarget()
             TEXT("[EnemyAI] Enemy is outside NavMesh")
         );
 
+        ScheduleNavigationRetry();
         return;
     }
 
@@ -240,6 +265,7 @@ void AEnemyAI::MoveToTarget()
             *CurrentTarget->GetName()
         );
 
+        ScheduleNavigationRetry();
         return;
     }
 
@@ -265,8 +291,11 @@ void AEnemyAI::MoveToTarget()
             TEXT("[EnemyAI] Complete path not found")
         );
 
+        ScheduleNavigationRetry();
         return;
     }
+
+    GetWorldTimerManager().ClearTimer(NavigationRetryTimer);
 
     // ======================================
     // DIAGNOSTICS
@@ -346,33 +375,29 @@ void AEnemyAI::MoveToTarget()
     switch (Result)
     {
     case EPathFollowingRequestResult::RequestSuccessful:
-
         UE_LOG(
             LogTemp,
             Warning,
             TEXT("[EnemyAI] Movement started")
         );
-
         break;
 
     case EPathFollowingRequestResult::AlreadyAtGoal:
-
         UE_LOG(
             LogTemp,
             Warning,
             TEXT("[EnemyAI] Already at target")
         );
-
         break;
 
     case EPathFollowingRequestResult::Failed:
-
         UE_LOG(
             LogTemp,
             Error,
             TEXT("[EnemyAI] Movement FAILED")
         );
 
+        ScheduleNavigationRetry();
         break;
     }
 
@@ -413,7 +438,6 @@ void AEnemyAI::OnObstacleDetected(AActor* Obstacle)
 
 void AEnemyAI::GrantKillReward()
 {
-    // Reward must only be granted once.
     if (bKillRewardGranted)
     {
         return;
@@ -421,7 +445,6 @@ void AEnemyAI::GrantKillReward()
 
     bKillRewardGranted = true;
 
-    // Zero reward is allowed.
     if (KillReward <= 0)
     {
         return;
@@ -434,8 +457,6 @@ void AEnemyAI::GrantKillReward()
         return;
     }
 
-    // The money component belongs to the
-    // player's controller, not the enemy.
     APlayerController* PlayerController =
         World->GetFirstPlayerController();
 
@@ -446,7 +467,6 @@ void AEnemyAI::GrantKillReward()
             Warning,
             TEXT("[EnemyAI] Kill reward failed: PlayerController not found")
         );
-
         return;
     }
 
@@ -460,7 +480,6 @@ void AEnemyAI::GrantKillReward()
             Warning,
             TEXT("[EnemyAI] Kill reward failed: MoneyComponent not found")
         );
-
         return;
     }
 
@@ -484,22 +503,19 @@ void AEnemyAI::GrantKillReward()
 
 void AEnemyAI::Die()
 {
-    // ReceiveDamage() reduces HP to zero
-    // before calling Die().
+    GetWorldTimerManager().ClearTimer(NavigationRetryTimer);
+
     if (bIsDead)
     {
         return;
     }
 
-    // Stop delayed movement initialization.
     GetWorldTimerManager().ClearTimer(
         MovementStartTimer
     );
 
-    // Stop active AI movement.
     StopMovement();
 
-    // Mark enemy as dead.
     Super::Die();
 
     UE_LOG(
@@ -509,13 +525,10 @@ void AEnemyAI::Die()
         *GetName()
     );
 
-    // Award money once for this death.
     GrantKillReward();
 
-    // Notify spawner and WaveManager.
     OnEnemyDied.Broadcast(this);
 
-    // Dead enemy no longer blocks movement.
     if (UCapsuleComponent* Capsule = GetCapsuleComponent())
     {
         Capsule->SetCollisionEnabled(
@@ -530,7 +543,6 @@ void AEnemyAI::Die()
         );
     }
 
-    // Remove dead enemy after delay.
     const float ActualDestroyDelay =
         FMath::Max(DeathDestroyDelay, 0.01f);
 
@@ -553,9 +565,8 @@ void AEnemyAI::EndPlay(
     const EEndPlayReason::Type EndPlayReason
 )
 {
-    GetWorldTimerManager().ClearTimer(
-        MovementStartTimer
-    );
+    GetWorldTimerManager().ClearTimer(NavigationRetryTimer);
+    GetWorldTimerManager().ClearTimer(MovementStartTimer);
 
     Super::EndPlay(EndPlayReason);
 }

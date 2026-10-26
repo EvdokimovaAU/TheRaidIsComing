@@ -57,7 +57,7 @@ void AEnemySwordsmanAI::BeginPlay()
 }
 
 // ==========================================
-// TICK: ONLY DURING WALL APPROACH
+// TICK
 // ==========================================
 
 void AEnemySwordsmanAI::Tick(float DeltaSeconds)
@@ -301,7 +301,8 @@ void AEnemySwordsmanAI::OnObstacleDetected(AActor* Obstacle)
     const float Chance =
         FMath::Clamp(WallAttackChance, 0.0f, 100.0f);
 
-    const float Roll = FMath::FRandRange(0.0f, 100.0f);
+    const float Roll =
+        FMath::FRandRange(0.0f, 100.0f);
 
     if (Roll < Chance)
     {
@@ -643,7 +644,6 @@ void AEnemySwordsmanAI::UpdateWallApproach(
         return;
     }
 
-    // Detect if character is not getting closer.
     if (Distance < PreviousWallDistance - 0.5f)
     {
         StuckTime = 0.0f;
@@ -669,7 +669,6 @@ void AEnemySwordsmanAI::UpdateWallApproach(
         return;
     }
 
-    // CharacterMovement handles physical collision.
     UCharacterMovementComponent* Movement =
         GetCharacterMovement();
 
@@ -679,11 +678,16 @@ void AEnemySwordsmanAI::UpdateWallApproach(
         return;
     }
 
+    // Save normal movement speed before local approach.
+    if (SavedWalkSpeed <= 0.0f)
+    {
+        SavedWalkSpeed = Movement->MaxWalkSpeed;
+    }
+
     Movement->MaxWalkSpeed =
         FMath::Max(WallApproachSpeed, 50.0f);
 
     AddMovementInput(Direction, 1.0f);
-
     SetActorRotation(Direction.Rotation());
 }
 
@@ -722,10 +726,20 @@ void AEnemySwordsmanAI::BeginWallDamage()
     }
 }
 
+// ==========================================
+// STOP WALL APPROACH
+// ==========================================
+
 void AEnemySwordsmanAI::StopWallApproach()
 {
     bApproachingWall = false;
     SetActorTickEnabled(false);
+
+    if (SavedWalkSpeed > 0.0f && GetCharacterMovement())
+    {
+        GetCharacterMovement()->MaxWalkSpeed = SavedWalkSpeed;
+        SavedWalkSpeed = 0.0f;
+    }
 }
 
 // ==========================================
@@ -838,7 +852,7 @@ void AEnemySwordsmanAI::OnWallDestroyed()
 }
 
 // ==========================================
-// CAPITOL DISTANCE
+// CHECK CAPITOL DISTANCE
 // ==========================================
 
 void AEnemySwordsmanAI::CheckCapitolDistance()
@@ -904,7 +918,7 @@ void AEnemySwordsmanAI::StartCapitolAttack()
 }
 
 // ==========================================
-// CAPITOL ATTACK
+// ATTACK CAPITOL
 // ==========================================
 
 void AEnemySwordsmanAI::AttackCapitol()
@@ -968,12 +982,11 @@ void AEnemySwordsmanAI::StopCapitolAttack()
     GetWorldTimerManager().ClearTimer(CapitolAttackTimer);
 
     bAttackingCapitol = false;
-
     StopAttackAnimation();
 }
 
 // ==========================================
-// ATTACK ANIMATION
+// PLAY ATTACK ANIMATION
 // ==========================================
 
 void AEnemySwordsmanAI::PlayAttackAnimation()
@@ -1000,6 +1013,10 @@ void AEnemySwordsmanAI::PlayAttackAnimation()
         Anim->PlayAttackAnimation();
     }
 }
+
+// ==========================================
+// STOP ATTACK ANIMATION
+// ==========================================
 
 void AEnemySwordsmanAI::StopAttackAnimation()
 {

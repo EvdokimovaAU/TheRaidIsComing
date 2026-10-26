@@ -35,29 +35,46 @@ public:
     )
     float WallAttackChance = 50.0f;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite,
-        Category = "AI|Wall|Decision")
+    UPROPERTY(
+        EditAnywhere,
+        BlueprintReadWrite,
+        Category = "AI|Wall|Decision"
+    )
     float WallAvoidanceDistance = 350.0f;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite,
-        Category = "AI|Wall|Decision")
+    UPROPERTY(
+        EditAnywhere,
+        BlueprintReadWrite,
+        Category = "AI|Wall|Decision"
+    )
     float WallAvoidanceTimeout = 5.0f;
 
-    // Local movement settings
-    UPROPERTY(EditAnywhere, BlueprintReadWrite,
-        Category = "AI|Wall|Approach")
+    UPROPERTY(
+        EditAnywhere,
+        BlueprintReadWrite,
+        Category = "AI|Wall|Approach"
+    )
     float WallApproachSpeed = 250.0f;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite,
-        Category = "AI|Wall|Approach")
+    UPROPERTY(
+        EditAnywhere,
+        BlueprintReadWrite,
+        Category = "AI|Wall|Approach"
+    )
     float WallApproachTimeout = 6.0f;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite,
-        Category = "AI|Wall|Approach")
+    UPROPERTY(
+        EditAnywhere,
+        BlueprintReadWrite,
+        Category = "AI|Wall|Approach"
+    )
     float WallAttackDistance = 115.0f;
 
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly,
-        Category = "AI|Wall")
+    UPROPERTY(
+        VisibleAnywhere,
+        BlueprintReadOnly,
+        Category = "AI|Wall"
+    )
     TObjectPtr<ARICBuilding> TargetWall = nullptr;
 
     virtual void Tick(float DeltaSeconds) override;
@@ -100,8 +117,10 @@ protected:
 private:
     void CheckWallAhead();
     bool IsValidWall(AActor* Actor) const;
+
     float GetDistanceToWall(const AActor* Wall) const;
     FVector GetClosestWallPoint(const AActor* Wall) const;
+
     bool HasFreePathToCapitol() const;
 
     bool TryAvoidWall(AActor* Wall);
@@ -128,6 +147,8 @@ private:
     float ApproachStartTime = 0.0f;
     float PreviousWallDistance = 0.0f;
     float StuckTime = 0.0f;
+
+    float SavedWalkSpeed = 0.0f;
 
     FTimerHandle WallCheckTimer;
     FTimerHandle WallAttackTimer;
