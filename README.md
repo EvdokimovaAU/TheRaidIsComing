@@ -29,7 +29,7 @@
 
 ГДД, техническая документация и остальные материалы разработки.
 
-**[Доска задач (GitHub Projects)](https://github.com/users/EvdokimovaAU/projects/2/views/1)**
+**[Доска задач (GitHub Projects)](https://github.com/EvdokimovaAU/TheRaidIsComing/wiki/Game-Design-Document)**
 
 Текущие задачи, распределение работы и отслеживание прогресса команды.
 
