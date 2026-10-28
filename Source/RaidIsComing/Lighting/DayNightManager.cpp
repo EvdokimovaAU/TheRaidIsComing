@@ -44,7 +44,8 @@ void ADayNightManager::BeginPlay()
     if (IsValid(SunLight.Get()))
     {
         SunYaw = SunLight->GetActorRotation().Yaw;
-        if (SunLight->GetComponent()->Mobility != EComponentMobility::Movable)
+        //if (SunLight->GetComponent()->Mobility != EComponentMobility::Movable)
+        if (SunLight->GetLightComponent()->Mobility != EComponentMobility::Movable)
         {
             UE_LOG(LogTemp, Warning, TEXT("DayNight: set SunLight mobility to Movable."));
         }
@@ -212,7 +213,8 @@ void ADayNightManager::ApplyLighting()
 {
     if (IsValid(SunLight.Get()))
     {
-        UDirectionalLightComponent* Light = SunLight->GetComponent();
+        //UDirectionalLightComponent* Light = SunLight->GetComponent();
+        UDirectionalLightComponent* Light = Cast<UDirectionalLightComponent>(SunLight->GetLightComponent());
         Light->SetIntensity(FMath::Max(0.0f, BlendDayTwilightNight(
             DaySunIntensity, TwilightSunIntensity, NightSunIntensity, DarknessProgress)));
         Light->SetLightColor(BlendDayTwilightNight(
