@@ -3,6 +3,8 @@
 #include "RaidIsComingPlayerController.h"
 
 #include "Construction/RICBuilding.h"
+#include "Construction/RICBuildZone.h"
+#include "EngineUtils.h"
 #include "Construction/RICConstructionComponent.h"
 #include "Construction/RICMoneyComponent.h"
 
@@ -74,12 +76,12 @@ void ARaidIsComingPlayerController::SetupInputComponent()
         return;
     }
 
-    // Выбор казармы.
+    // Вход в строительство без выбранной постройки.
     InputComponent->BindKey(
         EKeys::E,
         IE_Pressed,
         this,
-        &ARaidIsComingPlayerController::StartBarracksPreview
+        &ARaidIsComingPlayerController::EnterConstructionMode
     );
 
     InputComponent->BindKey(
@@ -228,15 +230,41 @@ void ARaidIsComingPlayerController::SetupInputComponent()
     }
 }
 
-void ARaidIsComingPlayerController::StartBarracksPreview()
+void ARaidIsComingPlayerController::EnterConstructionMode()
 {
-    UE_LOG(LogTemp, Warning, TEXT("[RIC Input] E received. Pawn=%s BarracksClass=%s"),
-        *GetNameSafe(GetPawn()), *GetNameSafe(BarracksClass.Get()));
-    StartTowerPreview(BarracksClass);
+    if (!ConstructionComponent || !GetWorld())
+    {
+        return;
+    }
+
+    ConstructionComponent->CancelPreview();
+    bWaitingForBuildingSelection = true;
+    StopMovement();
+    FollowTime = 0.0f;
+    bSuppressDestinationUntilRelease = true;
+
+    // Пока тип не выбран, показываем потенциальные зоны для обеих башен.
+    // Проверка размеров и свободного места выполняется после выбора 1/2.
+    const ARICBuilding* ArcherDefaults = ArcherTowerClass
+        ? ArcherTowerClass->GetDefaultObject<ARICBuilding>() : nullptr;
+    const ARICBuilding* MageDefaults = MageTowerClass
+        ? MageTowerClass->GetDefaultObject<ARICBuilding>() : nullptr;
+
+    for (TActorIterator<ARICBuildZone> It(GetWorld()); It; ++It)
+    {
+        const bool bAllowed =
+            (ArcherDefaults && It->IsBuildingAllowed(ArcherDefaults->BuildingType))
+            || (MageDefaults && It->IsBuildingAllowed(MageDefaults->BuildingType));
+        It->SetHighlighted(bAllowed);
+    }
+
+    UE_LOG(LogTemp, Log,
+        TEXT("[RIC Input] Construction selection: 1 Archer, 2 Mage, 3 Barrier. RMB cancels."));
 }
 
 void ARaidIsComingPlayerController::CancelBuildingPreview()
 {
+    bWaitingForBuildingSelection = false;
     if (ConstructionComponent)
     {
         ConstructionComponent->CancelPreview();
@@ -250,12 +278,15 @@ void ARaidIsComingPlayerController::OnInputStarted()
     FollowTime = 0.0f;
 
     bSuppressDestinationUntilRelease =
-        ConstructionComponent
-        && ConstructionComponent->IsBuildingMode();
+        bWaitingForBuildingSelection
+        || (ConstructionComponent && ConstructionComponent->IsBuildingMode());
 
     if (bSuppressDestinationUntilRelease)
     {
-        ConstructionComponent->TryPlacePreview();
+        if (!bWaitingForBuildingSelection && ConstructionComponent)
+        {
+            ConstructionComponent->TryPlacePreview();
+        }
         return;
     }
 
@@ -265,7 +296,8 @@ void ARaidIsComingPlayerController::OnInputStarted()
 void ARaidIsComingPlayerController::OnSetDestinationTriggered()
 {
     // Во время превью клик не управляет персонажем.
-    if (ConstructionComponent->IsBuildingMode()
+    if (bWaitingForBuildingSelection
+        || (ConstructionComponent && ConstructionComponent->IsBuildingMode())
         || bSuppressDestinationUntilRelease)
     {
         return;
@@ -291,7 +323,8 @@ void ARaidIsComingPlayerController::OnSetDestinationTriggered()
 
 void ARaidIsComingPlayerController::OnSetDestinationReleased()
 {
-    if (ConstructionComponent->IsBuildingMode()
+    if (bWaitingForBuildingSelection
+        || (ConstructionComponent && ConstructionComponent->IsBuildingMode())
         || bSuppressDestinationUntilRelease)
     {
         FollowTime = 0.0f;
@@ -401,9 +434,14 @@ void ARaidIsComingPlayerController::StartTowerPreview(
     UE_LOG(LogTemp, Warning, TEXT("[RIC Input] Preview requested: %s"),
         *GetNameSafe(BuildingClass.Get()));
     const bool bStarted = ConstructionComponent->StartPreview(BuildingClass);
+    if (!bStarted && bWaitingForBuildingSelection)
+    {
+        EnterConstructionMode();
+    }
     UE_LOG(LogTemp, Warning, TEXT("[RIC Input] Preview started=%d (visibility depends on valid zone/passage)."), bStarted);
     if (bStarted)
     {
+        bWaitingForBuildingSelection = false;
         StopMovement();
 
         FollowTime = 0.0f;

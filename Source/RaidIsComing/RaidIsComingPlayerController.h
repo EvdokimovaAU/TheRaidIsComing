@@ -33,9 +33,6 @@ protected:
     TObjectPtr<URICMoneyComponent> MoneyComponent;
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Construction")
-    TSubclassOf<ARICBuilding> BarracksClass;
-
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Construction")
     TSubclassOf<ARICBuilding> ArcherTowerClass;
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Construction")
@@ -69,12 +66,13 @@ protected:
     float FollowTime = 0.0f;
 
     bool bSuppressDestinationUntilRelease = false;
+    bool bWaitingForBuildingSelection = false;
 
     virtual void BeginPlay() override;
     virtual void SetupInputComponent() override;
     void OnConstructionClick();
 
-    void StartBarracksPreview();
+    void EnterConstructionMode();
     void StartArcherTowerPreview();
     void StartMageTowerPreview();
     void StartBarrierPreview();
