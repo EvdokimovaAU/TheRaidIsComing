@@ -20,8 +20,8 @@ public:
     virtual void Tick(float DeltaSeconds) override;
     virtual void OnConstruction(const FTransform& Transform) override;
 
-    // Управление Shift/курсором доступно в самом акторе; внешние системы
-    // по-прежнему могут вызывать эти методы напрямую.
+    // Совместимость со старыми вызовами. Параметр больше не управляет светом:
+    // прожектор автоматически работает ночью и выключается днем.
     UFUNCTION(BlueprintCallable, Category = "Searchlight")
     void SetActivationRequested(bool bRequested);
 
@@ -66,36 +66,31 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Searchlight|Settings")
     FLinearColor LightColor = FLinearColor::White;
 
-    // При включении мышь задает только направление по кругу.
+    // Мышь задает только направление по кругу.
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Searchlight|Aiming")
     bool bRotateOnlyHorizontally = true;
 
-    // Постоянный мировой наклон вниз в режиме вращения по кругу.
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Searchlight|Aiming", meta = (ClampMin = "-89", ClampMax = "-1", Units = "deg"))
     float FixedPitch = -45.0f;
 
-    // Высота плоскости наведения относительно позиции актора (в мировых см).
-    // Крыши и декорации не влияют на положение курсора на этой плоскости.
+    // Высота плоскости наведения относительно позиции актора.
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Searchlight|Aiming", meta = (Units = "cm"))
     float AimPlaneHeightOffset = 0.0f;
 
-    // Вкл. по умолчанию для одиночной игры. Отключить, если ввод
-    // будет перенесён в PlayerController / Enhanced Input.
+    // Отключить, если внешняя система передает цель через SetAimLocation.
+    // Эта настройка влияет только на наведение, а не на включение света.
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Searchlight|Input")
-    bool bEnableShiftInput = true;
+    bool bFollowMouseCursor = true;
 
 protected:
     virtual void BeginPlay() override;
     virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 private:
-    bool bActivationRequested = false;
     bool bHasAimLocation = false;
     FVector AimLocation = FVector::ZeroVector;
     TWeakObjectPtr<APlayerController> InputPlayerController;
 
-    void HandleShiftPressed();
-    void HandleShiftReleased();
     void UpdateAimFromCursor();
 
     UFUNCTION()

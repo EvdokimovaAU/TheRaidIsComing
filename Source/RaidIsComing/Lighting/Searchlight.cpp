@@ -10,11 +10,9 @@
 #include "Components/BoxComponent.h"
 #include "Components/SphereComponent.h"
 #include "Components/CapsuleComponent.h"
-#include "Components/InputComponent.h"
 #include "GameFramework/PlayerController.h"
 #include "Engine/World.h"
 #include "Engine/EngineTypes.h"
-#include "InputCoreTypes.h"
 
 namespace SearchlightGeometry
 {
@@ -207,31 +205,10 @@ void ASearchlight::BeginPlay()
     }
     RefreshActivation();
 
-    // Only one local player is used in this project. Bind the key on the
-    // placed actor so the Level Blueprint is not required for searchlight input.
-    if (bEnableShiftInput && GetWorld())
+    // Activation is controlled by the day/night manager. No keyboard bindings.
+    if (bFollowMouseCursor)
     {
-        APlayerController* Controller = GetWorld()->GetFirstPlayerController();
-        if (IsValid(Controller) && Controller->IsLocalController())
-        {
-            InputPlayerController = Controller;
-            EnableInput(Controller);
-
-            if (InputComponent)
-            {
-                // Do not consume Shift: other gameplay mappings may still use it.
-                InputComponent->BindKey(EKeys::LeftShift, IE_Pressed,
-                    this, &ASearchlight::HandleShiftPressed).bConsumeInput = false;
-                InputComponent->BindKey(EKeys::LeftShift, IE_Released,
-                    this, &ASearchlight::HandleShiftReleased).bConsumeInput = false;
-            }
-        }
-        else
-        {
-            UE_LOG(LogTemp, Warning,
-                TEXT("Searchlight %s: no local PlayerController for Shift input."),
-                *GetName());
-        }
+        UpdateAimFromCursor();
     }
 }
 
@@ -241,30 +218,22 @@ void ASearchlight::EndPlay(const EEndPlayReason::Type EndPlayReason)
     {
         DayNightManager->OnNightStateChanged.RemoveDynamic(this, &ASearchlight::HandleNightStateChanged);
     }
-    if (IsValid(InputPlayerController.Get()))
-    {
-        DisableInput(InputPlayerController.Get());
-    }
+    InputPlayerController.Reset();
     Super::EndPlay(EndPlayReason);
-}
-
-void ASearchlight::HandleShiftPressed()
-{
-    SetActivationRequested(true);
-    UpdateAimFromCursor();
-}
-
-void ASearchlight::HandleShiftReleased()
-{
-    SetActivationRequested(false);
 }
 
 void ASearchlight::UpdateAimFromCursor()
 {
     APlayerController* Controller = InputPlayerController.Get();
-    if (!IsValid(Controller))
+    if (!IsValid(Controller) || !Controller->IsLocalController())
     {
-        return;
+        Controller = GetWorld() ? GetWorld()->GetFirstPlayerController() : nullptr;
+        if (!IsValid(Controller) || !Controller->IsLocalController())
+        {
+            InputPlayerController.Reset();
+            return;
+        }
+        InputPlayerController = Controller;
     }
 
     FVector RayOrigin;
@@ -297,14 +266,14 @@ void ASearchlight::ApplySettings()
 
 bool ASearchlight::IsLightActive() const
 {
-    return bActivationRequested && IsValid(DayNightManager)
+    return IsValid(DayNightManager)
         && DayNightManager->IsNight() && IsValid(SpotLight)
         && SpotLight->IsVisible() && SpotLight->Intensity > 0.0f;
 }
 
 void ASearchlight::RefreshActivation()
 {
-    const bool bEnable = bActivationRequested && IsValid(DayNightManager)
+    const bool bEnable = IsValid(DayNightManager)
         && DayNightManager->IsNight() && LightIntensity > 0.0f;
     SpotLight->SetVisibility(bEnable);
     SetActorTickEnabled(bEnable);
@@ -312,7 +281,9 @@ void ASearchlight::RefreshActivation()
 
 void ASearchlight::SetActivationRequested(bool bRequested)
 {
-    bActivationRequested = bRequested;
+    // Compatibility with existing Blueprint/C++ callers: manual requests no
+    // longer override automatic night activation.
+    (void)bRequested;
     RefreshActivation();
 }
 
@@ -340,7 +311,7 @@ void ASearchlight::Tick(float DeltaSeconds)
     }
     // Follow the mouse continuously while the light is active.
     // The existing rotation-speed interpolation below remains unchanged.
-    if (bEnableShiftInput)
+    if (bFollowMouseCursor)
     {
         UpdateAimFromCursor();
     }

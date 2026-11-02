@@ -226,7 +226,37 @@ void ADayNightManager::ApplyLighting()
 
     if (IsValid(SkyLight.Get()))
     {
-        SkyLight->GetLightComponent()->SetIntensity(FMath::Max(0.0f, BlendDayTwilightNight(
-            DaySkyIntensity, TwilightSkyIntensity, NightSkyIntensity, DarknessProgress)));
+        USkyLightComponent* SkyComponent = SkyLight->GetLightComponent();
+
+        if (IsValid(SkyComponent))
+        {
+            const float DesiredIntensity = FMath::Max(
+                0.0f,
+                BlendDayTwilightNight(
+                    DaySkyIntensity,
+                    TwilightSkyIntensity,
+                    NightSkyIntensity,
+                    DarknessProgress));
+
+            SkyComponent->SetIntensity(DesiredIntensity);
+
+            if (DarknessProgress >= 1.0f)
+            {
+                UE_LOG(
+                    LogTemp,
+                    Warning,
+                    TEXT("[NightDebug] SkyLight=%s | Desired=%.3f | Actual=%.3f | Visible=%d | AffectsWorld=%d | Movable=%d"),
+                    *GetNameSafe(SkyLight.Get()),
+                    DesiredIntensity,
+                    SkyComponent->Intensity,
+                    SkyComponent->IsVisible() ? 1 : 0,
+                    SkyComponent->bAffectsWorld ? 1 : 0,
+                    SkyComponent->Mobility == EComponentMobility::Movable ? 1 : 0);
+            }
+        }
+    }
+    else if (DarknessProgress >= 1.0f)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[NightDebug] SkyLight is NOT assigned"));
     }
 }
