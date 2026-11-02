@@ -31,21 +31,20 @@ void ADayNightManager::BeginPlay()
 
     if (IsValid(WaveManager.Get()))
     {
-        // Start from daylight, then smoothly catch up even if a wave began
-        // before this actor's BeginPlay. Do not depend on actor startup order.
-        CurrentWave = 0;
-        TotalWaves = FMath::Max(1, WaveManager->GetTotalWaves());
+        TotalWaves = FMath::Max(0, WaveManager->GetTotalWaves());
+        CurrentWave = FMath::Clamp(WaveManager->GetCurrentWaveNumber(), 0, TotalWaves);
     }
-
-    TotalWaves = FMath::Max(1, TotalWaves);
-    CurrentWave = FMath::Clamp(CurrentWave, 0, TotalWaves);
-    DarknessStartWave = FMath::Max(1, DarknessStartWave);
+    else
+    {
+        TotalWaves = FMath::Max(0, TotalWaves);
+        CurrentWave = FMath::Clamp(CurrentWave, 0, TotalWaves);
+    }
 
     if (IsValid(SunLight.Get()))
     {
         SunYaw = SunLight->GetActorRotation().Yaw;
-        //if (SunLight->GetComponent()->Mobility != EComponentMobility::Movable)
-        if (SunLight->GetLightComponent()->Mobility != EComponentMobility::Movable)
+        if (SunLight->GetLightComponent()
+            && SunLight->GetLightComponent()->Mobility != EComponentMobility::Movable)
         {
             UE_LOG(LogTemp, Warning, TEXT("DayNight: set SunLight mobility to Movable."));
         }
@@ -59,14 +58,17 @@ void ADayNightManager::BeginPlay()
     {
         UE_LOG(LogTemp, Warning, TEXT("DayNight: assign SkyLight on the manager in the level."));
     }
-    else if (SkyLight->GetLightComponent()->Mobility != EComponentMobility::Movable)
+    else if (SkyLight->GetLightComponent()
+        && SkyLight->GetLightComponent()->Mobility != EComponentMobility::Movable)
     {
         UE_LOG(LogTemp, Warning, TEXT("DayNight: set SkyLight mobility to Movable."));
     }
 
-    // Стартовое состояние уровня применяется сразу; дальнейшие изменения плавные.
-    TargetDarkness = CalculateTargetDarkness();
+    // Apply the configured initial state immediately (including permanent
+    // night). No forced daylight frame before the first transition.
+    TargetDarkness = GetInitialDarkness();
     DarknessProgress = TargetDarkness;
+    bLightingInitialized = true;
     ApplyLighting();
     RefreshNightState();
     SetActorTickEnabled(false);
@@ -75,25 +77,19 @@ void ADayNightManager::BeginPlay()
     {
         WaveManager->OnWaveStarted.AddUniqueDynamic(
             this, &ADayNightManager::HandleWaveStarted);
-        WaveManager->OnWaveCompleted.AddUniqueDynamic(
-            this, &ADayNightManager::HandleWaveCompleted);
 
-        UE_LOG(LogTemp, Log, TEXT("DayNight: connected to wave manager %s."),
-            *GetNameSafe(WaveManager.Get()));
-
-        // Catch up if this actor begins play after an active wave started.
-        // A completed wave should not trigger a new night.
-        if (WaveManager->WaveState == EWaveState::Spawning ||
-            WaveManager->WaveState == EWaveState::InProgress)
-        {
-            HandleWaveStarted(WaveManager->GetCurrentWaveNumber());
-        }
+        UE_LOG(LogTemp, Log, TEXT("DayNight %s: connected to wave manager %s."),
+            *GetName(), *GetNameSafe(WaveManager.Get()));
     }
-    else
+    else if (LightingMode == ERICLightingMode::ByWaves)
     {
         UE_LOG(LogTemp, Warning,
             TEXT("DayNight: WaveManager is not assigned; using manual UpdateWaveState control."));
     }
+
+    // Also catches up when BeginPlay happens between waves or after the last
+    // wave. Lighting progress no longer depends on the active/completed state.
+    StartDarknessTransition(CalculateTargetDarkness());
 }
 
 void ADayNightManager::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -102,8 +98,6 @@ void ADayNightManager::EndPlay(const EEndPlayReason::Type EndPlayReason)
     {
         WaveManager->OnWaveStarted.RemoveDynamic(
             this, &ADayNightManager::HandleWaveStarted);
-        WaveManager->OnWaveCompleted.RemoveDynamic(
-            this, &ADayNightManager::HandleWaveCompleted);
     }
     Super::EndPlay(EndPlayReason);
 }
@@ -115,45 +109,61 @@ void ADayNightManager::HandleWaveStarted(int32 WaveNumber)
         return;
     }
 
-    const int32 ActualTotal = WaveManager->GetTotalWaves();
-    if (ActualTotal <= 0)
-    {
-        UE_LOG(LogTemp, Warning,
-            TEXT("DayNight: WaveManager has no waves; keeping daylight."));
-        UpdateWaveState(0, 1);
-        return;
-    }
-
-    UpdateWaveState(WaveNumber, ActualTotal);
+    UpdateWaveState(WaveNumber, WaveManager->GetTotalWaves());
 }
 
-void ADayNightManager::HandleWaveCompleted(int32 WaveNumber)
+float ADayNightManager::GetInitialDarkness() const
 {
-    UE_LOG(LogTemp, Log,
-        TEXT("DayNight: wave %d completed; starting dawn."), WaveNumber);
+    if (LightingMode == ERICLightingMode::PermanentNight)
+    {
+        return 1.0f;
+    }
+    return FMath::IsFinite(InitialDarkness)
+        ? FMath::Clamp(InitialDarkness, 0.0f, 1.0f) : 0.0f;
+}
 
-    // Keep CurrentWave as the real wave number; only change the lighting target.
-    StartDarknessTransition(0.0f);
+bool ADayNightManager::IsNight() const
+{
+    // A searchlight can begin play before this actor. Give it the configured
+    // initial night state instead of the not-yet-initialized bool.
+    return bLightingInitialized ? bIsNight : GetInitialDarkness() >= 1.0f;
 }
 
 float ADayNightManager::CalculateTargetDarkness() const
 {
-    const int32 SafeTotal = FMath::Max(1, TotalWaves);
-    const int32 StartWave = FMath::Max(1, DarknessStartWave);
-    if (CurrentWave < StartWave || StartWave > SafeTotal)
+    const float Initial = GetInitialDarkness();
+    if (LightingMode == ERICLightingMode::PermanentNight)
     {
-        return 0.0f;
+        return 1.0f;
+    }
+    if (TotalWaves <= 0 || CurrentWave <= 0)
+    {
+        return Initial;
     }
 
-    // При Start=3, Total=6: волны 0..2 -> 0; 3 -> .25; 4 -> .5; 5 -> .75; 6 -> 1.
-    const double Numerator = static_cast<double>(CurrentWave) - StartWave + 1.0;
-    const double Denominator = static_cast<double>(SafeTotal) - StartWave + 1.0;
-    return static_cast<float>(FMath::Clamp(Numerator / Denominator, 0.0, 1.0));
+    const float Final = FMath::IsFinite(FinalDarkness)
+        ? FMath::Clamp(FinalDarkness, 0.0f, 1.0f) : 1.0f;
+
+    // A single-wave level transitions to its final lighting when wave 1 starts.
+    if (TotalWaves == 1)
+    {
+        return Final;
+    }
+    if (CurrentWave >= TotalWaves)
+    {
+        return Final;
+    }
+
+    // For three waves: 0, 0.5, 1. Before wave 1: initial lighting.
+    const float Progress = FMath::Clamp(
+        static_cast<float>(CurrentWave - 1) / static_cast<float>(TotalWaves - 1),
+        0.0f, 1.0f);
+    return FMath::Lerp(Initial, Final, Progress);
 }
 
 void ADayNightManager::UpdateWaveState(int32 NewCurrentWave, int32 NewTotalWaves)
 {
-    TotalWaves = FMath::Max(1, NewTotalWaves);
+    TotalWaves = FMath::Max(0, NewTotalWaves);
     CurrentWave = FMath::Clamp(NewCurrentWave, 0, TotalWaves);
     const float NewTarget = CalculateTargetDarkness();
 
@@ -165,10 +175,11 @@ void ADayNightManager::UpdateWaveState(int32 NewCurrentWave, int32 NewTotalWaves
 
 void ADayNightManager::StartDarknessTransition(float NewTarget)
 {
-    NewTarget = FMath::Clamp(NewTarget, 0.0f, 1.0f);
+    NewTarget = FMath::IsFinite(NewTarget)
+        ? FMath::Clamp(NewTarget, 0.0f, 1.0f) : GetInitialDarkness();
 
     // Avoid restarting the same transition.
-    if (FMath::IsNearlyEqual(NewTarget, TargetDarkness))
+    if (NewTarget == TargetDarkness)
     {
         return;
     }
@@ -213,15 +224,17 @@ void ADayNightManager::ApplyLighting()
 {
     if (IsValid(SunLight.Get()))
     {
-        //UDirectionalLightComponent* Light = SunLight->GetComponent();
         UDirectionalLightComponent* Light = Cast<UDirectionalLightComponent>(SunLight->GetLightComponent());
-        Light->SetIntensity(FMath::Max(0.0f, BlendDayTwilightNight(
-            DaySunIntensity, TwilightSunIntensity, NightSunIntensity, DarknessProgress)));
-        Light->SetLightColor(BlendDayTwilightNight(
-            DaySunColor, TwilightSunColor, NightSunColor, DarknessProgress));
-        const float Pitch = BlendDayTwilightNight(
-            DaySunPitch, TwilightSunPitch, NightSunPitch, DarknessProgress);
-        SunLight->SetActorRotation(FRotator(Pitch, SunYaw, 0.0f));
+        if (IsValid(Light))
+        {
+            Light->SetIntensity(FMath::Max(0.0f, BlendDayTwilightNight(
+                DaySunIntensity, TwilightSunIntensity, NightSunIntensity, DarknessProgress)));
+            Light->SetLightColor(BlendDayTwilightNight(
+                DaySunColor, TwilightSunColor, NightSunColor, DarknessProgress));
+            const float Pitch = BlendDayTwilightNight(
+                DaySunPitch, TwilightSunPitch, NightSunPitch, DarknessProgress);
+            SunLight->SetActorRotation(FRotator(Pitch, SunYaw, 0.0f));
+        }
     }
 
     if (IsValid(SkyLight.Get()))

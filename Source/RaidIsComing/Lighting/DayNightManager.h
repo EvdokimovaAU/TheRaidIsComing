@@ -10,6 +10,13 @@ class AWaveManager;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FRICNightStateChanged, bool, bNight);
 
+UENUM(BlueprintType)
+enum class ERICLightingMode : uint8
+{
+    ByWaves UMETA(DisplayName = "By Waves"),
+    PermanentNight UMETA(DisplayName = "Permanent Night")
+};
+
 UCLASS(Blueprintable)
 class RAIDISCOMING_API ADayNightManager : public AActor
 {
@@ -24,7 +31,7 @@ public:
     void UpdateWaveState(int32 NewCurrentWave, int32 NewTotalWaves);
 
     UFUNCTION(BlueprintPure, Category = "DayNight")
-    bool IsNight() const { return bIsNight; }
+    bool IsNight() const;
 
     UFUNCTION(BlueprintPure, Category = "DayNight")
     float GetDarknessProgress() const { return DarknessProgress; }
@@ -38,8 +45,18 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "DayNight|Waves", meta = (ClampMin = "1"))
     int32 TotalWaves = 6;
 
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "DayNight|Waves", meta = (ClampMin = "1"))
-    int32 DarknessStartWave = 3;
+    // One level is one day. Wave completion does not reset lighting.
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "DayNight|Level")
+    ERICLightingMode LightingMode = ERICLightingMode::ByWaves;
+
+    // 0 = day, 0.5 = twilight, 1 = full night.
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "DayNight|Level",
+        meta = (ClampMin = "0", ClampMax = "1", EditCondition = "LightingMode == ERICLightingMode::ByWaves"))
+    float InitialDarkness = 0.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "DayNight|Level",
+        meta = (ClampMin = "0", ClampMax = "1", EditCondition = "LightingMode == ERICLightingMode::ByWaves"))
+    float FinalDarkness = 1.0f;
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "DayNight|State")
     float DarknessProgress = 0.0f;
@@ -106,10 +123,7 @@ private:
     UFUNCTION()
     void HandleWaveStarted(int32 WaveNumber);
 
-    UFUNCTION()
-    void HandleWaveCompleted(int32 WaveNumber);
-
-    // Reuses the existing smooth transition for night and dawn.
+    // Each new target starts from the current interpolated lighting.
     void StartDarknessTransition(float NewTarget);
 
     float StartDarkness = 0.0f;
@@ -118,7 +132,9 @@ private:
     float ActiveDuration = 3.0f;
     float SunYaw = 0.0f;
 
+    float GetInitialDarkness() const;
     float CalculateTargetDarkness() const;
+    bool bLightingInitialized = false;
     void ApplyLighting();
     void RefreshNightState();
 };
