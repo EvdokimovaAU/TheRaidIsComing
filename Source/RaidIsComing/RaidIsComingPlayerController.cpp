@@ -1,6 +1,7 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "RaidIsComingPlayerController.h"
+#include "AI/WaveManager.h"
 
 #include "Construction/RICBuilding.h"
 #include "Construction/RICBuildZone.h"
@@ -75,6 +76,12 @@ void ARaidIsComingPlayerController::SetupInputComponent()
     {
         return;
     }
+
+    InputComponent->BindKey(
+        EKeys::Q,
+        IE_Pressed,
+        this,
+        &ARaidIsComingPlayerController::StartNextWaveFromInput);
 
     // Вход в строительство без выбранной постройки.
     InputComponent->BindKey(
@@ -452,4 +459,42 @@ void ARaidIsComingPlayerController::StartBarrierPreview()
 {
     UE_LOG(LogTemp, Warning, TEXT("[RIC Input] 3 received."));
     StartTowerPreview(BarrierClass);
+}
+
+void ARaidIsComingPlayerController::StartNextWaveFromInput()
+{
+    if (!IsLocalPlayerController() || !GetWorld())
+    {
+        return;
+    }
+
+    if (!CachedWaveManager.IsValid())
+    {
+        AWaveManager* FoundManager = nullptr;
+        for (TActorIterator<AWaveManager> It(GetWorld()); It; ++It)
+        {
+            if (!IsValid(*It))
+            {
+                continue;
+            }
+            if (FoundManager)
+            {
+                UE_LOG(LogTemp, Error,
+                    TEXT("[RIC Input] Multiple WaveManagers found. Keep one manager on the level."));
+                return;
+            }
+            FoundManager = *It;
+        }
+        CachedWaveManager = FoundManager;
+    }
+
+    AWaveManager* Manager = CachedWaveManager.Get();
+    if (!IsValid(Manager))
+    {
+        UE_LOG(LogTemp, Warning,
+            TEXT("[RIC Input] Q: WaveManager was not found on this level."));
+        return;
+    }
+
+    Manager->StartNextWave();
 }

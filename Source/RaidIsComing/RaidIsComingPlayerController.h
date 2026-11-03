@@ -7,6 +7,7 @@
 #include "GameFramework/PlayerController.h"
 #include "RaidIsComingPlayerController.generated.h"
 class URICMoneyComponent;
+class AWaveManager;
 
 class UNiagaraSystem;
 class UInputMappingContext;
@@ -71,6 +72,8 @@ protected:
     virtual void BeginPlay() override;
     virtual void SetupInputComponent() override;
     void OnConstructionClick();
+    void StartNextWaveFromInput();
+    TWeakObjectPtr<AWaveManager> CachedWaveManager;
 
     void EnterConstructionMode();
     void StartArcherTowerPreview();

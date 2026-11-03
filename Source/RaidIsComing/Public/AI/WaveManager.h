@@ -9,6 +9,14 @@
 class ATargetPoint;
 
 UENUM(BlueprintType)
+enum class ERICLevelPhase : uint8
+{
+    Preparation UMETA(DisplayName = "Preparation"),
+    Wave        UMETA(DisplayName = "Wave"),
+    Completed   UMETA(DisplayName = "Completed")
+};
+
+UENUM(BlueprintType)
 enum class EWaveState : uint8
 {
     Waiting    UMETA(DisplayName = "Waiting"),
@@ -69,6 +77,9 @@ class RAIDISCOMING_API AWaveManager : public AActor
 public:
     AWaveManager();
 
+    UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Waves|Phase")
+    ERICLevelPhase LevelPhase = ERICLevelPhase::Preparation;
+
     UPROPERTY(EditInstanceOnly, BlueprintReadOnly,
         Category = "Waves")
     TArray<FWaveData> Waves;
@@ -76,6 +87,7 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite,
         Category = "Waves|Timing",
         meta = (ClampMin = "0.1"))
+    // Delay before automatically starting the next wave.
     float TimeBetweenWaves = 5.0f;
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly,
@@ -107,6 +119,7 @@ public:
     FOnAllWavesCompleted OnAllWavesCompleted;
 
     UFUNCTION(BlueprintCallable, Category = "Waves")
+    // Manual start is accepted only during initial level preparation.
     void StartNextWave();
 
     UFUNCTION(BlueprintCallable, Category = "Waves")
@@ -132,7 +145,9 @@ protected:
     ) override;
 
 private:
+    void StartNextWaveInternal();
     void CheckWaveCompletion();
 
     FTimerHandle NextWaveTimerHandle;
+    bool bDispatchingWaveEvents = false;
 };
