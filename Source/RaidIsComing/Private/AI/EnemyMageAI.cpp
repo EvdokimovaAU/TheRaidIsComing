@@ -13,16 +13,11 @@
 AEnemyMageAI::AEnemyMageAI()
 {
     PrimaryActorTick.bCanEverTick = false;
-
     bAutoStartMovement = false;
 
     MovementSpeed = 300.0f;
-    AcceptanceRadius = 150.0f;
+    AcceptanceRadius = 100.0f;
 }
-
-// ==========================================
-// BEGIN PLAY
-// ==========================================
 
 void AEnemyMageAI::BeginPlay()
 {
@@ -31,31 +26,29 @@ void AEnemyMageAI::BeginPlay()
     if (UCharacterMovementComponent* Movement =
         GetCharacterMovement())
     {
-        Movement->MaxWalkSpeed = MageMovementSpeed;
+        Movement->MaxWalkSpeed = NormalMovementSpeed;
         Movement->MaxAcceleration = MageAcceleration;
         Movement->BrakingDecelerationWalking =
             MageBrakingDeceleration;
-
         Movement->GroundFriction = 4.0f;
         Movement->bRequestedMoveUseAcceleration = true;
     }
 
-    CurrentDesiredSpeed = MageMovementSpeed;
+    CurrentDesiredSpeed = NormalMovementSpeed;
+
+    const float Interval =
+        FMath::Max(0.05f, FollowUpdateInterval);
 
     GetWorldTimerManager().SetTimer(
         BehaviorTimer,
         this,
         &AEnemyMageAI::UpdateBehavior,
-        0.1f,
+        Interval,
         true
     );
 
     UpdateBehavior();
 }
-
-// ==========================================
-// SEARCH SWORDSMEN
-// ==========================================
 
 bool AEnemyMageAI::IsSwordsman(
     const AEnemyAI* Enemy) const
@@ -75,8 +68,7 @@ void AEnemyMageAI::FindAlliesAhead()
 
     if (IsValid(Capitol))
     {
-        Forward =
-            Capitol->GetActorLocation() -
+        Forward = Capitol->GetActorLocation() -
             GetActorLocation();
     }
 
@@ -99,11 +91,9 @@ void AEnemyMageAI::FindAlliesAhead()
 
         Offset.Z = 0.0f;
 
-        if (Offset.SizeSquared() >
+        if (Offset.SizeSquared2D() >
             FMath::Square(AllyDetectionRadius))
-        {
             continue;
-        }
 
         if (Offset.IsNearlyZero())
             continue;
@@ -117,16 +107,10 @@ void AEnemyMageAI::FindAlliesAhead()
     }
 }
 
-// ==========================================
-// SELECT SWORDSMAN
-// ==========================================
-
 void AEnemyMageAI::SelectSwordsman()
 {
-    FollowedSwordsman.Reset();
-
-    float BestDistance =
-        TNumericLimits<float>::Max();
+    AEnemyAI* BestAlly = nullptr;
+    float BestDistance = TNumericLimits<float>::Max();
 
     for (AEnemyAI* Ally : AlliesAhead)
     {
@@ -136,20 +120,29 @@ void AEnemyMageAI::SelectSwordsman()
         const float Distance =
             FVector::DistSquared2D(
                 GetActorLocation(),
-                Ally->GetActorLocation()
-            );
+                Ally->GetActorLocation());
 
         if (Distance < BestDistance)
         {
             BestDistance = Distance;
-            FollowedSwordsman = Ally;
+            BestAlly = Ally;
         }
     }
-}
 
-// ==========================================
-// BARRIER
-// ==========================================
+    // Меняем цель только при необходимости.
+    if (FollowedSwordsman.Get() != BestAlly)
+    {
+        FollowedSwordsman = BestAlly;
+        bFollowingSwordsman = false;
+        bMovingToCapitol = false;
+
+        UE_LOG(LogTemp, Log,
+            TEXT("[Mage] Target changed: %s"),
+            IsValid(BestAlly)
+            ? *BestAlly->GetName()
+            : TEXT("None"));
+    }
+}
 
 bool AEnemyMageAI::HasActiveBarrier() const
 {
@@ -171,13 +164,8 @@ void AEnemyMageAI::Barrier()
     if (!CanCreateBarrier())
         return;
 
-    MageState = EMageState::CreatingBarrier;
-
-    // Создание барьера не останавливает мага.
-
     FActorSpawnParameters Params;
     Params.Owner = this;
-
     Params.SpawnCollisionHandlingOverride =
         ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 
@@ -194,10 +182,6 @@ void AEnemyMageAI::Barrier()
         NextBarrierTime =
             GetWorld()->GetTimeSeconds() +
             BarrierCooldown;
-
-        UE_LOG(LogTemp, Warning,
-            TEXT("[Mage] Failed to create barrier"));
-
         return;
     }
 
@@ -212,9 +196,8 @@ void AEnemyMageAI::Barrier()
         GetWorld()->GetTimeSeconds() +
         BarrierCooldown;
 
-    UE_LOG(LogTemp, Warning,
-        TEXT("[Mage] Barrier created: %s"),
-        *GetName());
+    UE_LOG(LogTemp, Log,
+        TEXT("[Mage] Barrier created"));
 }
 
 void AEnemyMageAI::RemoveBarrier()
@@ -228,12 +211,7 @@ void AEnemyMageAI::RemoveBarrier()
     ActiveBarrier = nullptr;
 }
 
-// ==========================================
-// FOLLOW SPEED
-// ==========================================
-
-void AEnemyMageAI::UpdateFollowSpeed(
-    float DeltaTime)
+void AEnemyMageAI::UpdateFollowSpeed(float DeltaTime)
 {
     UCharacterMovementComponent* Movement =
         GetCharacterMovement();
@@ -241,9 +219,9 @@ void AEnemyMageAI::UpdateFollowSpeed(
     if (!Movement)
         return;
 
-    AEnemyAI* Ally = FollowedSwordsman.Get();
+    float TargetSpeed = NormalMovementSpeed;
 
-    float TargetSpeed = MageMovementSpeed;
+    AEnemyAI* Ally = FollowedSwordsman.Get();
 
     if (IsValid(Ally) && Ally->IsAlive())
     {
@@ -255,19 +233,25 @@ void AEnemyMageAI::UpdateFollowSpeed(
         const float AllySpeed =
             Ally->GetVelocity().Size2D();
 
-        if (Distance >= ResumeFollowDistance)
+        if (Distance > FollowDistance + 100.0f)
         {
-            // Маг отстал и ускоряется.
+            // Маг отстал — ускоряемся.
             TargetSpeed = MageMovementSpeed;
+        }
+        else if (Distance > FollowDistance)
+        {
+            TargetSpeed = FMath::Clamp(
+                AllySpeed + 30.0f,
+                NormalMovementSpeed,
+                MageMovementSpeed);
         }
         else
         {
-            // Подстраивается под скорость мечника.
+            // Маг рядом — подстраивается.
             TargetSpeed = FMath::Clamp(
                 AllySpeed,
-                MinFollowSpeed,
-                MageMovementSpeed
-            );
+                NormalMovementSpeed,
+                MageMovementSpeed);
         }
     }
 
@@ -275,19 +259,14 @@ void AEnemyMageAI::UpdateFollowSpeed(
         CurrentDesiredSpeed,
         TargetSpeed,
         DeltaTime,
-        SpeedChangeRate
-    );
+        SpeedChangeRate);
 
     Movement->MaxWalkSpeed = CurrentDesiredSpeed;
 }
 
-// ==========================================
-// MOVEMENT
-// ==========================================
-
 void AEnemyMageAI::UpdateMovement()
 {
-    if (!IsAlive())
+    if (!IsAlive() || !IsValid(Capitol))
         return;
 
     AAIController* MageController =
@@ -302,59 +281,30 @@ void AEnemyMageAI::UpdateMovement()
     {
         MageState = EMageState::FollowingSwordsmen;
 
-        const bool bTargetChanged =
-            CurrentMoveTarget.Get() != Ally ||
-            bMovingToCapitol;
-
-        if (bTargetChanged)
+        if (!bFollowingSwordsman ||
+            CurrentMoveTarget.Get() != Ally)
         {
             CurrentMoveTarget = Ally;
+            bFollowingSwordsman = true;
             bMovingToCapitol = false;
-            bFollowingMoveActive = false;
-        }
 
-        const float Distance =
-            FVector::Dist2D(
-                GetActorLocation(),
-                Ally->GetActorLocation());
-
-        if (!bFollowingMoveActive &&
-            Distance >= ResumeFollowDistance)
-        {
+            // Маленький радиус, чтобы маг
+            // не останавливался далеко от мечника.
             MageController->MoveToActor(
                 Ally,
-                FollowDistance,
+                35.0f,
                 true,
                 true,
                 true
             );
 
-            // Проверяем, запущено ли движение.
-            bFollowingMoveActive =
-                MageController->GetMoveStatus() ==
-                EPathFollowingStatus::Moving;
-
             UE_LOG(LogTemp, Log,
-                TEXT("[Mage] Following %s | Distance: %.1f"),
-                *Ally->GetName(),
-                Distance);
+                TEXT("[Mage] Following swordsman: %s"),
+                *Ally->GetName());
         }
-
-        // Не прерываем активный путь.
-        // Движение завершается автоматически
-        // при достижении FollowDistance.
 
         return;
     }
-
-    // ======================================
-    // NO SWORDSMAN - MOVE TO CAPITOL
-    // ======================================
-
-    bFollowingMoveActive = false;
-
-    if (!IsValid(Capitol))
-        return;
 
     MageState = HasActiveBarrier()
         ? EMageState::MovingAlone
@@ -365,8 +315,15 @@ void AEnemyMageAI::UpdateMovement()
     {
         CurrentMoveTarget = Capitol.Get();
         bMovingToCapitol = true;
+        bFollowingSwordsman = false;
 
-        Super::MoveToTarget();
+        MageController->MoveToActor(
+            Capitol.Get(),
+            AcceptanceRadius,
+            true,
+            true,
+            true
+        );
 
         UE_LOG(LogTemp, Log,
             TEXT("[Mage] Moving to Capitol"));
@@ -378,57 +335,42 @@ void AEnemyMageAI::MoveToTarget()
     UpdateMovement();
 }
 
-// ==========================================
-// BEHAVIOR
-// ==========================================
-
 void AEnemyMageAI::UpdateBehavior()
 {
     if (!IsAlive())
     {
         GetWorldTimerManager().ClearTimer(
             BehaviorTimer);
-
         return;
     }
 
     FindAlliesAhead();
-
-    if (!FollowedSwordsman.IsValid() ||
-        !FollowedSwordsman->IsAlive())
-    {
-        SelectSwordsman();
-    }
+    SelectSwordsman();
 
     if (IsValid(ActiveBarrier) &&
         !ActiveBarrier->IsBarrierActive())
     {
         RemoveBarrier();
-        MageState = EMageState::WaitingForBarrier;
     }
 
-    if (!HasActiveBarrier() &&
-        CanCreateBarrier())
+    if (!HasActiveBarrier() && CanCreateBarrier())
     {
         Barrier();
     }
 
-    UpdateMovement();
-    UpdateFollowSpeed(0.1f);
-}
+    const float Interval =
+        FMath::Max(0.05f, FollowUpdateInterval);
 
-// ==========================================
-// DEATH
-// ==========================================
+    UpdateFollowSpeed(Interval);
+    UpdateMovement();
+}
 
 void AEnemyMageAI::Die()
 {
     if (!IsAlive())
         return;
 
-    GetWorldTimerManager().ClearTimer(
-        BehaviorTimer);
-
+    GetWorldTimerManager().ClearTimer(BehaviorTimer);
     RemoveBarrier();
 
     Super::Die();
@@ -437,9 +379,7 @@ void AEnemyMageAI::Die()
 void AEnemyMageAI::EndPlay(
     const EEndPlayReason::Type EndPlayReason)
 {
-    GetWorldTimerManager().ClearTimer(
-        BehaviorTimer);
-
+    GetWorldTimerManager().ClearTimer(BehaviorTimer);
     RemoveBarrier();
 
     Super::EndPlay(EndPlayReason);

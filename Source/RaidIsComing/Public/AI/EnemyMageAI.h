@@ -6,7 +6,7 @@
 #include "EnemyMageAI.generated.h"
 
 class AEnemyBarrier;
-class AAIController;
+class AEnemySwordsmanAI;
 
 UENUM(BlueprintType)
 enum class EMageState : uint8
@@ -26,83 +26,53 @@ class RAIDISCOMING_API AEnemyMageAI : public AEnemyAI
 public:
     AEnemyMageAI();
 
-    // ==========================================
-    // MAGIC
-    // ==========================================
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AI|Magic")
+    float AllyDetectionRadius = 600.0f;
 
-    UPROPERTY(EditAnywhere, BlueprintReadOnly,
-        Category = "AI|Magic")
-    float AllyDetectionRadius = 500.0f;
-
-    UPROPERTY(EditAnywhere, BlueprintReadOnly,
-        Category = "AI|Magic")
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AI|Magic")
     float BarrierHP = 100.0f;
 
-    UPROPERTY(EditAnywhere, BlueprintReadOnly,
-        Category = "AI|Magic")
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AI|Magic")
     float BarrierCooldown = 5.0f;
 
-    UPROPERTY(EditAnywhere, BlueprintReadOnly,
-        Category = "AI|Magic")
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AI|Magic")
     float BarrierDuration = 0.0f;
 
-    UPROPERTY(EditAnywhere, BlueprintReadOnly,
-        Category = "AI|Magic")
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AI|Magic")
     TSubclassOf<AEnemyBarrier> BarrierClass;
 
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly,
-        Category = "AI|Magic")
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AI|Magic")
     TObjectPtr<AEnemyBarrier> ActiveBarrier = nullptr;
 
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly,
-        Category = "AI|Magic")
-    EMageState MageState = EMageState::CreatingBarrier;
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AI|Magic")
+    EMageState MageState = EMageState::MovingAlone;
 
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly,
-        Category = "AI|Magic")
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AI|Magic")
     TArray<TObjectPtr<AEnemyAI>> AlliesAhead;
 
-    // ==========================================
-    // MOVEMENT
-    // ==========================================
-
-    // ∆елаема€ дистанци€ до мечника.
-    UPROPERTY(EditAnywhere, BlueprintReadOnly,
-        Category = "AI|Movement")
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AI|Movement")
     float FollowDistance = 180.0f;
 
-    // ƒистанци€, при которой маг начинает
-    // активнее догон€ть мечника.
-    UPROPERTY(EditAnywhere, BlueprintReadOnly,
-        Category = "AI|Movement")
-    float ResumeFollowDistance = 300.0f;
-
-    // ћаксимальна€ скорость при преследовании.
-    UPROPERTY(EditAnywhere, BlueprintReadOnly,
-        Category = "AI|Movement")
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AI|Movement")
     float MageMovementSpeed = 380.0f;
 
-    UPROPERTY(EditAnywhere, BlueprintReadOnly,
-        Category = "AI|Movement")
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AI|Movement")
+    float NormalMovementSpeed = 300.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AI|Movement")
     float MageAcceleration = 600.0f;
 
-    UPROPERTY(EditAnywhere, BlueprintReadOnly,
-        Category = "AI|Movement")
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AI|Movement")
     float MageBrakingDeceleration = 350.0f;
 
-    // ћинимальна€ скорость при сопровождении.
-    UPROPERTY(EditAnywhere, BlueprintReadOnly,
-        Category = "AI|Movement")
-    float MinFollowSpeed = 200.0f;
-
-    // —корость изменени€ максимальной скорости.
-    UPROPERTY(EditAnywhere, BlueprintReadOnly,
-        Category = "AI|Movement")
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AI|Movement")
     float SpeedChangeRate = 250.0f;
 
-    // ==========================================
-    // PUBLIC METHODS
-    // ==========================================
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AI|Movement")
+    float FollowUpdateInterval = 0.2f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AI|Movement")
+    float RepathDistance = 100.0f;
 
     UFUNCTION(BlueprintCallable, Category = "AI|Magic")
     void FindAlliesAhead();
@@ -133,10 +103,10 @@ private:
     TWeakObjectPtr<AActor> CurrentMoveTarget;
 
     bool bMovingToCapitol = false;
-    bool bFollowingMoveActive = false;
+    bool bFollowingSwordsman = false;
 
     float NextBarrierTime = 0.0f;
-    float CurrentDesiredSpeed = 0.0f;
+    float CurrentDesiredSpeed = 300.0f;
 
     void UpdateBehavior();
     void SelectSwordsman();
