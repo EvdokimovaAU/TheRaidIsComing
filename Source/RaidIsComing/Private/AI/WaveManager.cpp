@@ -17,9 +17,8 @@ void AWaveManager::BeginPlay()
         TEXT("[WaveManager] Initialized. Total waves: %d"),
         Waves.Num());
 
-    UE_LOG(LogTemp, Warning,
-        TEXT("[WaveManager] Time between waves: %.1f seconds"),
-        TimeBetweenWaves);
+    UE_LOG(LogTemp, Log,
+        TEXT("[WaveManager] Preparation. Press Q to start wave 1."));
 }
 
 void AWaveManager::EndPlay(
@@ -33,6 +32,22 @@ void AWaveManager::EndPlay(
 
 void AWaveManager::StartNextWave()
 {
+    if (bDispatchingWaveEvents || LevelPhase != ERICLevelPhase::Preparation)
+    {
+        return;
+    }
+
+    StartNextWaveInternal();
+}
+
+void AWaveManager::StartNextWaveInternal()
+{
+    if (bDispatchingWaveEvents || LevelPhase == ERICLevelPhase::Completed)
+    {
+        return;
+    }
+
+    TGuardValue<bool> EventGuard(bDispatchingWaveEvents, true);
     if (WaveState == EWaveState::Spawning ||
         WaveState == EWaveState::InProgress)
     {
@@ -72,6 +87,7 @@ void AWaveManager::StartNextWave()
 
     AliveEnemies = 0;
     bSpawningFinished = false;
+    LevelPhase = ERICLevelPhase::Wave;
     WaveState = EWaveState::Spawning;
 
     UE_LOG(LogTemp, Warning,
@@ -138,7 +154,14 @@ void AWaveManager::CheckWaveCompletion()
         return;
     }
 
+    TGuardValue<bool> EventGuard(bDispatchingWaveEvents, true);
     WaveState = EWaveState::Completed;
+    GetWorldTimerManager().ClearTimer(NextWaveTimerHandle);
+
+    const bool bLastWave = CurrentWaveIndex >= Waves.Num() - 1;
+    LevelPhase = bLastWave
+        ? ERICLevelPhase::Completed
+        : ERICLevelPhase::Wave;
 
     UE_LOG(LogTemp, Warning,
         TEXT("[WaveManager] Wave %d completed!"),
@@ -146,31 +169,26 @@ void AWaveManager::CheckWaveCompletion()
 
     OnWaveCompleted.Broadcast(GetCurrentWaveNumber());
 
-    if (WaveState != EWaveState::Completed)
-        return;
-
-    if (CurrentWaveIndex == Waves.Num() - 1)
+    if (bLastWave)
     {
         UE_LOG(LogTemp, Warning,
             TEXT("[WaveManager] ALL WAVES COMPLETED!"));
-
         OnAllWavesCompleted.Broadcast();
         return;
     }
 
-    const float Delay = FMath::Max(
-        0.1f, TimeBetweenWaves);
-
-    UE_LOG(LogTemp, Warning,
-        TEXT("[WaveManager] Next wave starts in %.1f seconds"),
-        Delay);
-
+    const float Delay = FMath::Max(0.1f, TimeBetweenWaves);
     GetWorldTimerManager().SetTimer(
         NextWaveTimerHandle,
         this,
-        &AWaveManager::StartNextWave,
+        &AWaveManager::StartNextWaveInternal,
         Delay,
         false);
+
+    UE_LOG(LogTemp, Log,
+        TEXT("[WaveManager] Wave %d will start automatically in %.2f seconds."),
+        GetCurrentWaveNumber() + 1,
+        Delay);
 }
 
 int32 AWaveManager::GetCurrentWaveNumber() const
