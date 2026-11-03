@@ -4,36 +4,25 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "TimerManager.h"
-
 #include "EnemySpawner.generated.h"
 
 class AWaveManager;
 class AEnemyAI;
 class ATargetPoint;
 
-
-// ==========================================
-// ACTIVE SPAWN GROUP
-// ==========================================
-
 struct FActiveSpawnGroup
 {
     TWeakObjectPtr<ATargetPoint> SpawnPoint;
 
     int32 RemainingSwordsmen = 0;
-    int32 RemainingArchers = 0;
+    int32 RemainingMages = 0;
 
     bool HasPendingEnemies() const
     {
         return RemainingSwordsmen > 0 ||
-            RemainingArchers > 0;
+            RemainingMages > 0;
     }
 };
-
-
-// ==========================================
-// ENEMY SPAWNER
-// ==========================================
 
 UCLASS()
 class RAIDISCOMING_API AEnemySpawner : public AActor
@@ -41,88 +30,57 @@ class RAIDISCOMING_API AEnemySpawner : public AActor
     GENERATED_BODY()
 
 public:
-
     AEnemySpawner();
 
 protected:
-
     virtual void BeginPlay() override;
 
     virtual void EndPlay(
         const EEndPlayReason::Type EndPlayReason
     ) override;
 
-    // ======================================
-    // LEVEL REFERENCES
-    // ======================================
-
-    UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Spawner")
+    UPROPERTY(EditInstanceOnly, BlueprintReadOnly,
+        Category = "Spawner")
     TObjectPtr<AWaveManager> WaveManager = nullptr;
 
-    UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Spawner")
+    UPROPERTY(EditInstanceOnly, BlueprintReadOnly,
+        Category = "Spawner")
     TObjectPtr<AActor> Capitol = nullptr;
 
-    // ======================================
-    // ENEMY CLASSES
-    // ======================================
-
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Spawner|Enemies")
+    UPROPERTY(EditAnywhere, BlueprintReadOnly,
+        Category = "Spawner|Enemies")
     TSubclassOf<AEnemyAI> SwordsmanClass;
 
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Spawner|Enemies")
-    TSubclassOf<AEnemyAI> ArcherClass;
+    UPROPERTY(EditAnywhere, BlueprintReadOnly,
+        Category = "Spawner|Enemies")
+    TSubclassOf<AEnemyAI> MageClass;
 
-    // ======================================
-    // SPAWN PLACEMENT
-    // ======================================
-
-    UPROPERTY(
-        EditAnywhere,
-        BlueprintReadOnly,
+    UPROPERTY(EditAnywhere, BlueprintReadOnly,
         Category = "Spawner|Placement",
-        meta = (ClampMin = "0.0")
-    )
+        meta = (ClampMin = "0.0"))
     float MinimumSpawnDistance = 150.0f;
 
-    UPROPERTY(
-        EditAnywhere,
-        BlueprintReadOnly,
+    UPROPERTY(EditAnywhere, BlueprintReadOnly,
         Category = "Spawner|Placement",
-        meta = (ClampMin = "0.0")
-    )
+        meta = (ClampMin = "0.0"))
     float SpawnSearchRadius = 400.0f;
 
-    UPROPERTY(
-        EditAnywhere,
-        BlueprintReadOnly,
+    UPROPERTY(EditAnywhere, BlueprintReadOnly,
         Category = "Spawner|Placement",
-        meta = (ClampMin = "1")
-    )
+        meta = (ClampMin = "1"))
     int32 MaxSpawnAttempts = 24;
 
-    UPROPERTY(
-        EditAnywhere,
-        BlueprintReadOnly,
+    UPROPERTY(EditAnywhere, BlueprintReadOnly,
         Category = "Spawner|Placement",
-        meta = (ClampMin = "0.1")
-    )
+        meta = (ClampMin = "0.1"))
     float RetryInterval = 0.5f;
 
 private:
-
-    // ======================================
-    // EVENTS
-    // ======================================
-
     UFUNCTION()
     void HandleWaveStarted(int32 WaveNumber);
 
     UFUNCTION()
     void HandleEnemyDied(AEnemyAI* DeadEnemy);
-
-    // ======================================
-    // SPAWNING
-    // ======================================
 
     void SpawnNextEnemy();
 
@@ -141,10 +99,6 @@ private:
     bool HasPendingEnemies() const;
 
     void CompleteSpawning();
-
-    // ======================================
-    // RUNTIME DATA
-    // ======================================
 
     TArray<FActiveSpawnGroup> ActiveGroups;
 

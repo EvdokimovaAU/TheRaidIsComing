@@ -8,80 +8,58 @@
 
 class ATargetPoint;
 
-// ==========================================
-// WAVE STATE
-// ==========================================
-
 UENUM(BlueprintType)
 enum class EWaveState : uint8
 {
-    Waiting     UMETA(DisplayName = "Waiting"),
-    Spawning    UMETA(DisplayName = "Spawning"),
-    InProgress  UMETA(DisplayName = "In Progress"),
-    Completed   UMETA(DisplayName = "Completed")
+    Waiting    UMETA(DisplayName = "Waiting"),
+    Spawning   UMETA(DisplayName = "Spawning"),
+    InProgress UMETA(DisplayName = "In Progress"),
+    Completed  UMETA(DisplayName = "Completed")
 };
-
-// ==========================================
-// ONE SPAWN GROUP
-// ==========================================
 
 USTRUCT(BlueprintType)
 struct FWaveSpawnGroup
 {
     GENERATED_BODY()
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spawn Group")
+    UPROPERTY(EditAnywhere, BlueprintReadWrite,
+        Category = "Spawn Group")
     TObjectPtr<ATargetPoint> SpawnPoint = nullptr;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spawn Group",
+    UPROPERTY(EditAnywhere, BlueprintReadWrite,
+        Category = "Spawn Group",
         meta = (ClampMin = "0"))
     int32 SwordsmanCount = 0;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spawn Group",
+    UPROPERTY(EditAnywhere, BlueprintReadWrite,
+        Category = "Spawn Group",
         meta = (ClampMin = "0"))
-    int32 ArcherCount = 0;
+    int32 MageCount = 0;
 };
-
-// ==========================================
-// ONE WAVE
-// ==========================================
 
 USTRUCT(BlueprintType)
 struct FWaveData
 {
     GENERATED_BODY()
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Wave")
+    UPROPERTY(EditAnywhere, BlueprintReadWrite,
+        Category = "Wave")
     TArray<FWaveSpawnGroup> SpawnGroups;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Wave",
+    UPROPERTY(EditAnywhere, BlueprintReadWrite,
+        Category = "Wave",
         meta = (ClampMin = "0.1"))
     float SpawnInterval = 1.5f;
 };
 
-// ==========================================
-// EVENTS
-// ==========================================
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
+    FOnWaveStarted, int32, WaveNumber);
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
-    FOnWaveStarted,
-    int32,
-    WaveNumber
-);
-
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
-    FOnWaveCompleted,
-    int32,
-    WaveNumber
-);
+    FOnWaveCompleted, int32, WaveNumber);
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(
-    FOnAllWavesCompleted
-);
-
-// ==========================================
-// WAVE MANAGER
-// ==========================================
+    FOnAllWavesCompleted);
 
 UCLASS()
 class RAIDISCOMING_API AWaveManager : public AActor
@@ -89,47 +67,44 @@ class RAIDISCOMING_API AWaveManager : public AActor
     GENERATED_BODY()
 
 public:
-
     AWaveManager();
 
-    // All waves configured on the placed actor.
-    UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "Waves")
+    UPROPERTY(EditInstanceOnly, BlueprintReadOnly,
+        Category = "Waves")
     TArray<FWaveData> Waves;
 
-    // Delay between completed waves.
     UPROPERTY(EditAnywhere, BlueprintReadWrite,
         Category = "Waves|Timing",
         meta = (ClampMin = "0.1"))
     float TimeBetweenWaves = 5.0f;
 
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Waves")
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly,
+        Category = "Waves")
     int32 CurrentWaveIndex = -1;
 
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Waves")
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly,
+        Category = "Waves")
     EWaveState WaveState = EWaveState::Waiting;
 
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Waves")
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly,
+        Category = "Waves")
     int32 AliveEnemies = 0;
 
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Waves")
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly,
+        Category = "Waves")
     bool bSpawningFinished = false;
 
-    // ======================================
-    // EVENTS
-    // ======================================
-
-    UPROPERTY(BlueprintAssignable, Category = "Waves|Events")
+    UPROPERTY(BlueprintAssignable,
+        Category = "Waves|Events")
     FOnWaveStarted OnWaveStarted;
 
-    UPROPERTY(BlueprintAssignable, Category = "Waves|Events")
+    UPROPERTY(BlueprintAssignable,
+        Category = "Waves|Events")
     FOnWaveCompleted OnWaveCompleted;
 
-    UPROPERTY(BlueprintAssignable, Category = "Waves|Events")
+    UPROPERTY(BlueprintAssignable,
+        Category = "Waves|Events")
     FOnAllWavesCompleted OnAllWavesCompleted;
-
-    // ======================================
-    // FUNCTIONS
-    // ======================================
 
     UFUNCTION(BlueprintCallable, Category = "Waves")
     void StartNextWave();
@@ -150,12 +125,13 @@ public:
     int32 GetTotalWaves() const;
 
 protected:
-
     virtual void BeginPlay() override;
-    virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+
+    virtual void EndPlay(
+        const EEndPlayReason::Type EndPlayReason
+    ) override;
 
 private:
-
     void CheckWaveCompletion();
 
     FTimerHandle NextWaveTimerHandle;
