@@ -4,6 +4,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "TimerManager.h"
+
 #include "EnemySpawner.generated.h"
 
 class AWaveManager;
@@ -84,7 +85,9 @@ private:
 
     void SpawnNextEnemy();
 
-    bool TrySpawnFromGroup(FActiveSpawnGroup& Group);
+    bool TrySpawnFromGroup(
+        FActiveSpawnGroup& Group
+    );
 
     bool FindFreeSpawnLocation(
         ATargetPoint* Point,

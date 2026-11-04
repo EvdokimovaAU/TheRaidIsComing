@@ -78,8 +78,8 @@ public:
     TObjectPtr<ARICBuilding> TargetWall = nullptr;
 
     virtual void Tick(float DeltaSeconds) override;
-
     virtual void OnObstacleDetected(AActor* Obstacle) override;
+    virtual void MoveToTarget() override;
 
     UFUNCTION(BlueprintCallable, Category = "AI|Wall")
     void StartWallAttack(AActor* Wall);
@@ -104,6 +104,14 @@ public:
 
     UFUNCTION(BlueprintCallable, Category = "AI|Capitol")
     void StopCapitolAttack();
+
+    // Waiting for mage barrier cast
+    void WaitForMage(AActor* Mage);
+    void ResumeAfterMage(AActor* Mage);
+
+    bool IsWaitingForMage() const;
+    bool IsAttackingWall() const;
+    bool IsAttackingCapitol() const;
 
     virtual void Die() override;
 
@@ -135,6 +143,7 @@ private:
     void StopAttackAnimation();
 
     TWeakObjectPtr<ARICBuilding> AvoidedWall;
+    TWeakObjectPtr<AActor> WaitingForMage;
 
     FVector AvoidanceDestination = FVector::ZeroVector;
 
