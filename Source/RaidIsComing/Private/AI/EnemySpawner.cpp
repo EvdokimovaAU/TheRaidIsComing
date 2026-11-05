@@ -79,7 +79,9 @@ void AEnemySpawner::HandleWaveStarted(int32 WaveNumber)
         return;
     }
 
-    for (const FWaveSpawnGroup& Group : WaveData.SpawnGroups)
+    // Validate all groups before spawning.
+    for (const FWaveSpawnGroup& Group :
+        WaveData.SpawnGroups)
     {
         const int32 Swordsmen =
             FMath::Max(0, Group.SwordsmanCount);
@@ -87,7 +89,10 @@ void AEnemySpawner::HandleWaveStarted(int32 WaveNumber)
         const int32 Mages =
             FMath::Max(0, Group.MageCount);
 
-        if (Swordsmen + Mages == 0)
+        const int32 Torchbearers =
+            FMath::Max(0, Group.TorchbearerCount);
+
+        if (Swordsmen + Mages + Torchbearers == 0)
             continue;
 
         if (!IsValid(Group.SpawnPoint))
@@ -97,11 +102,24 @@ void AEnemySpawner::HandleWaveStarted(int32 WaveNumber)
             return;
         }
 
-        if ((Swordsmen > 0 && !SwordsmanClass) ||
-            (Mages > 0 && !MageClass))
+        if (Swordsmen > 0 && !SwordsmanClass)
         {
             UE_LOG(LogTemp, Error,
-                TEXT("[EnemySpawner] Missing enemy class"));
+                TEXT("[EnemySpawner] SwordsmanClass missing"));
+            return;
+        }
+
+        if (Mages > 0 && !MageClass)
+        {
+            UE_LOG(LogTemp, Error,
+                TEXT("[EnemySpawner] MageClass missing"));
+            return;
+        }
+
+        if (Torchbearers > 0 && !TorchbearerClass)
+        {
+            UE_LOG(LogTemp, Error,
+                TEXT("[EnemySpawner] TorchbearerClass missing"));
             return;
         }
     }
@@ -114,7 +132,9 @@ void AEnemySpawner::HandleWaveStarted(int32 WaveNumber)
     CurrentSpawnInterval =
         FMath::Max(0.1f, WaveData.SpawnInterval);
 
-    for (const FWaveSpawnGroup& Group : WaveData.SpawnGroups)
+    // Create active spawn groups.
+    for (const FWaveSpawnGroup& Group :
+        WaveData.SpawnGroups)
     {
         FActiveSpawnGroup ActiveGroup;
 
@@ -126,6 +146,9 @@ void AEnemySpawner::HandleWaveStarted(int32 WaveNumber)
         ActiveGroup.RemainingMages =
             FMath::Max(0, Group.MageCount);
 
+        ActiveGroup.RemainingTorchbearers =
+            FMath::Max(0, Group.TorchbearerCount);
+
         if (ActiveGroup.HasPendingEnemies())
         {
             ActiveGroups.Add(ActiveGroup);
@@ -135,7 +158,7 @@ void AEnemySpawner::HandleWaveStarted(int32 WaveNumber)
     bIsSpawning = true;
 
     UE_LOG(LogTemp, Warning,
-        TEXT("[EnemySpawner] Wave %d | Groups: %d"),
+        TEXT("[EnemySpawner] Wave %d | Active groups: %d"),
         WaveNumber,
         ActiveGroups.Num());
 
@@ -172,8 +195,11 @@ bool AEnemySpawner::IsFarEnoughFromEnemies(
     {
         const AEnemyAI* OtherEnemy = *It;
 
-        if (!IsValid(OtherEnemy) || !OtherEnemy->IsAlive())
+        if (!IsValid(OtherEnemy) ||
+            !OtherEnemy->IsAlive())
+        {
             continue;
+        }
 
         const float Distance = FVector::Dist2D(
             Location,
@@ -238,9 +264,12 @@ bool AEnemySpawner::FindFreeSpawnLocation(
 
     const FVector Center = Point->GetActorLocation();
 
-    const int32 Attempts = FMath::Max(1, MaxSpawnAttempts);
+    const int32 Attempts =
+        FMath::Max(1, MaxSpawnAttempts);
 
-    for (int32 Attempt = 0; Attempt < Attempts; ++Attempt)
+    for (int32 Attempt = 0;
+        Attempt < Attempts;
+        ++Attempt)
     {
         FVector Candidate = Center;
 
@@ -266,8 +295,11 @@ bool AEnemySpawner::FindFreeSpawnLocation(
                 (2.0f * PI * PositionInRing / 8.0f) +
                 Ring * 0.35f;
 
-            Candidate.X += FMath::Cos(Angle) * Radius;
-            Candidate.Y += FMath::Sin(Angle) * Radius;
+            Candidate.X +=
+                FMath::Cos(Angle) * Radius;
+
+            Candidate.Y +=
+                FMath::Sin(Angle) * Radius;
         }
 
         FNavLocation NavLocation;
@@ -283,9 +315,14 @@ bool AEnemySpawner::FindFreeSpawnLocation(
 
         const FVector SpawnLocation =
             NavLocation.Location +
-            FVector(0.0f, 0.0f, CapsuleHalfHeight + 2.0f);
+            FVector(
+                0.0f,
+                0.0f,
+                CapsuleHalfHeight + 2.0f
+            );
 
-        if (FVector::Dist2D(SpawnLocation, Center) >
+        if (FVector::Dist2D(
+            SpawnLocation, Center) >
             SpawnSearchRadius + 1.0f)
         {
             continue;
@@ -332,13 +369,36 @@ bool AEnemySpawner::TrySpawnFromGroup(
         return false;
     }
 
-    const bool bSpawnSwordsman =
-        Group.RemainingSwordsmen > 0;
+    // Select enemy type.
+    enum class ESpawnEnemyType
+    {
+        Swordsman,
+        Mage,
+        Torchbearer
+    };
 
-    TSubclassOf<AEnemyAI> ClassToSpawn =
-        bSpawnSwordsman
-        ? SwordsmanClass
-        : MageClass;
+    ESpawnEnemyType SpawnType;
+    TSubclassOf<AEnemyAI> ClassToSpawn = nullptr;
+
+    if (Group.RemainingSwordsmen > 0)
+    {
+        SpawnType = ESpawnEnemyType::Swordsman;
+        ClassToSpawn = SwordsmanClass;
+    }
+    else if (Group.RemainingMages > 0)
+    {
+        SpawnType = ESpawnEnemyType::Mage;
+        ClassToSpawn = MageClass;
+    }
+    else if (Group.RemainingTorchbearers > 0)
+    {
+        SpawnType = ESpawnEnemyType::Torchbearer;
+        ClassToSpawn = TorchbearerClass;
+    }
+    else
+    {
+        return false;
+    }
 
     if (!ClassToSpawn)
         return false;
@@ -369,10 +429,21 @@ bool AEnemySpawner::TrySpawnFromGroup(
     if (!IsValid(Enemy))
         return false;
 
-    if (bSpawnSwordsman)
+    // Decrement the correct enemy counter.
+    switch (SpawnType)
+    {
+    case ESpawnEnemyType::Swordsman:
         --Group.RemainingSwordsmen;
-    else
+        break;
+
+    case ESpawnEnemyType::Mage:
         --Group.RemainingMages;
+        break;
+
+    case ESpawnEnemyType::Torchbearer:
+        --Group.RemainingTorchbearers;
+        break;
+    }
 
     RegisteredEnemies.Add(
         TWeakObjectPtr<AEnemyAI>(Enemy)
@@ -415,7 +486,9 @@ void AEnemySpawner::SpawnNextEnemy()
 
     const int32 GroupCount = ActiveGroups.Num();
 
-    for (int32 Attempt = 0; Attempt < GroupCount; ++Attempt)
+    for (int32 Attempt = 0;
+        Attempt < GroupCount;
+        ++Attempt)
     {
         const int32 GroupIndex =
             (NextGroupIndex + Attempt) % GroupCount;

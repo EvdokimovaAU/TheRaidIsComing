@@ -11,17 +11,20 @@ class AWaveManager;
 class AEnemyAI;
 class ATargetPoint;
 
+// Active group of enemies waiting to spawn.
 struct FActiveSpawnGroup
 {
     TWeakObjectPtr<ATargetPoint> SpawnPoint;
 
     int32 RemainingSwordsmen = 0;
     int32 RemainingMages = 0;
+    int32 RemainingTorchbearers = 0;
 
     bool HasPendingEnemies() const
     {
         return RemainingSwordsmen > 0 ||
-            RemainingMages > 0;
+            RemainingMages > 0 ||
+            RemainingTorchbearers > 0;
     }
 };
 
@@ -40,14 +43,17 @@ protected:
         const EEndPlayReason::Type EndPlayReason
     ) override;
 
+    // Wave manager on the level.
     UPROPERTY(EditInstanceOnly, BlueprintReadOnly,
         Category = "Spawner")
     TObjectPtr<AWaveManager> WaveManager = nullptr;
 
+    // Enemy target.
     UPROPERTY(EditInstanceOnly, BlueprintReadOnly,
         Category = "Spawner")
     TObjectPtr<AActor> Capitol = nullptr;
 
+    // Enemy classes.
     UPROPERTY(EditAnywhere, BlueprintReadOnly,
         Category = "Spawner|Enemies")
     TSubclassOf<AEnemyAI> SwordsmanClass;
@@ -56,6 +62,11 @@ protected:
         Category = "Spawner|Enemies")
     TSubclassOf<AEnemyAI> MageClass;
 
+    UPROPERTY(EditAnywhere, BlueprintReadOnly,
+        Category = "Spawner|Enemies")
+    TSubclassOf<AEnemyAI> TorchbearerClass;
+
+    // Spawn placement settings.
     UPROPERTY(EditAnywhere, BlueprintReadOnly,
         Category = "Spawner|Placement",
         meta = (ClampMin = "0.0"))
