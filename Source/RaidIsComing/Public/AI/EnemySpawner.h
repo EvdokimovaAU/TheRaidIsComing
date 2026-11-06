@@ -4,14 +4,12 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "TimerManager.h"
-#include "AI/GameBalanceManager.h"
 #include "EnemySpawner.generated.h"
 
 class AWaveManager;
 class AEnemyAI;
 class ATargetPoint;
 
-// Active group of enemies waiting to spawn.
 struct FActiveSpawnGroup
 {
     TWeakObjectPtr<ATargetPoint> SpawnPoint;
@@ -43,17 +41,14 @@ protected:
         const EEndPlayReason::Type EndPlayReason
     ) override;
 
-    // Wave manager on the level.
     UPROPERTY(EditInstanceOnly, BlueprintReadOnly,
         Category = "Spawner")
     TObjectPtr<AWaveManager> WaveManager = nullptr;
 
-    // Enemy target.
     UPROPERTY(EditInstanceOnly, BlueprintReadOnly,
         Category = "Spawner")
     TObjectPtr<AActor> Capitol = nullptr;
 
-    // Enemy classes.
     UPROPERTY(EditAnywhere, BlueprintReadOnly,
         Category = "Spawner|Enemies")
     TSubclassOf<AEnemyAI> SwordsmanClass;
@@ -66,38 +61,46 @@ protected:
         Category = "Spawner|Enemies")
     TSubclassOf<AEnemyAI> TorchbearerClass;
 
-    // Spawn placement settings.
+    // Free space BETWEEN capsule surfaces, not centers.
     UPROPERTY(EditAnywhere, BlueprintReadOnly,
         Category = "Spawner|Placement",
         meta = (ClampMin = "0.0"))
-    float MinimumSpawnDistance = 150.0f;
+    float MinimumSpawnDistance = 10.f;
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly,
         Category = "Spawner|Placement",
         meta = (ClampMin = "0.0"))
-    float SpawnSearchRadius = 400.0f;
+    float SpawnSearchRadius = 250.f;
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly,
         Category = "Spawner|Placement",
         meta = (ClampMin = "1"))
-    int32 MaxSpawnAttempts = 24;
+    int32 MaxSpawnAttempts = 64;
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly,
         Category = "Spawner|Placement",
-        meta = (ClampMin = "0.1"))
+        meta = (ClampMin = "0.01"))
     float RetryInterval = 0.5f;
 
 private:
     UFUNCTION()
     void HandleWaveStarted(int32 WaveNumber);
-    void ApplySpawnBalance();
+
     UFUNCTION()
     void HandleEnemyDied(AEnemyAI* DeadEnemy);
+
+    void ApplySpawnBalance();
 
     void SpawnNextEnemy();
 
     bool TrySpawnFromGroup(
         FActiveSpawnGroup& Group
+    );
+
+    bool SpawnEnemy(
+        FActiveSpawnGroup& Group,
+        TSubclassOf<AEnemyAI> EnemyClass,
+        int32& RemainingCount
     );
 
     bool FindFreeSpawnLocation(
@@ -107,7 +110,9 @@ private:
     ) const;
 
     bool IsFarEnoughFromEnemies(
-        const FVector& Location
+        const FVector& Location,
+        float NewCapsuleRadius,
+        float NewCapsuleHalfHeight
     ) const;
 
     bool HasPendingEnemies() const;

@@ -3,6 +3,7 @@
 
 #include "AI/WaveManager.h"
 #include "AI/EnemyAI.h"
+#include "AI/GameBalanceManager.h"
 
 #include "Engine/World.h"
 #include "Engine/TargetPoint.h"
@@ -19,6 +20,10 @@ AEnemySpawner::AEnemySpawner()
     PrimaryActorTick.bCanEverTick = false;
 }
 
+// ==========================================
+// BALANCE
+// ==========================================
+
 void AEnemySpawner::ApplySpawnBalance()
 {
     AGameBalanceManager* Balance =
@@ -34,24 +39,25 @@ void AEnemySpawner::ApplySpawnBalance()
     const FSpawnBalanceSettings& Settings =
         Balance->Spawning;
 
-    MinimumSpawnDistance =
-        FMath::Max(0.0f, Settings.MinimumSpawnDistance);
+    // Compact spawning. Balance settings cannot
+    // force enemies to appear far apart.
+    MinimumSpawnDistance = FMath::Clamp(
+        Settings.MinimumSpawnDistance, 0.f, 15.f);
 
-    SpawnSearchRadius =
-        FMath::Max(0.0f, Settings.SpawnSearchRadius);
+    SpawnSearchRadius = FMath::Clamp(
+        Settings.SpawnSearchRadius, 100.f, 300.f);
 
-    MaxSpawnAttempts =
-        FMath::Max(1, Settings.MaxSpawnAttempts);
+    MaxSpawnAttempts = FMath::Max(
+        64, Settings.MaxSpawnAttempts);
 
-    RetryInterval =
-        FMath::Max(0.01f, Settings.RetryInterval);
+    RetryInterval = FMath::Max(
+        0.01f, Settings.RetryInterval);
 
     UE_LOG(LogTemp, Log,
-        TEXT("[EnemySpawner] Balance applied | Distance=%.1f Radius=%.1f Attempts=%d Retry=%.2f"),
+        TEXT("[EnemySpawner] Balance | Gap=%.1f Radius=%.1f Attempts=%d"),
         MinimumSpawnDistance,
         SpawnSearchRadius,
-        MaxSpawnAttempts,
-        RetryInterval);
+        MaxSpawnAttempts);
 }
 
 // ==========================================
@@ -94,7 +100,9 @@ void AEnemySpawner::BeginPlay()
 void AEnemySpawner::HandleWaveStarted(int32 WaveNumber)
 {
     if (!IsValid(WaveManager) || bIsSpawning)
+    {
         return;
+    }
 
     const int32 WaveIndex = WaveNumber - 1;
 
@@ -116,7 +124,6 @@ void AEnemySpawner::HandleWaveStarted(int32 WaveNumber)
         return;
     }
 
-    // Validate all groups before spawning.
     for (const FWaveSpawnGroup& Group :
         WaveData.SpawnGroups)
     {
@@ -130,7 +137,9 @@ void AEnemySpawner::HandleWaveStarted(int32 WaveNumber)
             FMath::Max(0, Group.TorchbearerCount);
 
         if (Swordsmen + Mages + Torchbearers == 0)
+        {
             continue;
+        }
 
         if (!IsValid(Group.SpawnPoint))
         {
@@ -169,7 +178,6 @@ void AEnemySpawner::HandleWaveStarted(int32 WaveNumber)
     CurrentSpawnInterval =
         FMath::Max(0.1f, WaveData.SpawnInterval);
 
-    // Create active spawn groups.
     for (const FWaveSpawnGroup& Group :
         WaveData.SpawnGroups)
     {
@@ -211,47 +219,88 @@ bool AEnemySpawner::HasPendingEnemies() const
     for (const FActiveSpawnGroup& Group : ActiveGroups)
     {
         if (Group.HasPendingEnemies())
+        {
             return true;
+        }
     }
 
     return false;
 }
 
 // ==========================================
-// CHECK DISTANCE
+// CAPSULE DISTANCE CHECK
 // ==========================================
 
 bool AEnemySpawner::IsFarEnoughFromEnemies(
-    const FVector& Location
+    const FVector& Location,
+    float NewCapsuleRadius,
+    float NewCapsuleHalfHeight
 ) const
 {
     if (!GetWorld())
+    {
         return false;
+    }
 
     for (TActorIterator<AEnemyAI> It(GetWorld()); It; ++It)
     {
-        const AEnemyAI* OtherEnemy = *It;
+        const AEnemyAI* Other = *It;
 
-        if (!IsValid(OtherEnemy) ||
-            !OtherEnemy->IsAlive())
+        if (!IsValid(Other) || !Other->IsAlive())
         {
             continue;
         }
 
-        const float Distance = FVector::Dist2D(
-            Location,
-            OtherEnemy->GetActorLocation()
-        );
+        const UCapsuleComponent* OtherCapsule =
+            Other->GetCapsuleComponent();
 
-        if (Distance < MinimumSpawnDistance)
+        if (!OtherCapsule)
+        {
+            continue;
+        }
+
+        const float OtherRadius =
+            OtherCapsule->GetScaledCapsuleRadius();
+
+        const float OtherHalfHeight =
+            OtherCapsule->GetScaledCapsuleHalfHeight();
+
+        const float RequiredDistance =
+            NewCapsuleRadius +
+            OtherRadius +
+            MinimumSpawnDistance;
+
+        const float HorizontalDistance =
+            FVector::Dist2D(
+                Location,
+                Other->GetActorLocation()
+            );
+
+        const float VerticalDistance =
+            FMath::Abs(
+                Location.Z -
+                Other->GetActorLocation().Z
+            );
+
+        // Ignore enemies on a sufficiently
+        // different vertical level.
+        if (VerticalDistance >=
+            NewCapsuleHalfHeight + OtherHalfHeight)
+        {
+            continue;
+        }
+
+        if (HorizontalDistance < RequiredDistance)
+        {
             return false;
+        }
     }
 
     return true;
 }
 
 // ==========================================
-// FIND FREE SPAWN LOCATION
+// FIND COMPACT SPAWN LOCATION
 // ==========================================
 
 bool AEnemySpawner::FindFreeSpawnLocation(
@@ -261,12 +310,13 @@ bool AEnemySpawner::FindFreeSpawnLocation(
 ) const
 {
     if (!GetWorld() || !IsValid(Point) || !EnemyClass)
+    {
         return false;
+    }
 
     UNavigationSystemV1* NavSys =
         FNavigationSystem::GetCurrent<UNavigationSystemV1>(
-            GetWorld()
-        );
+            GetWorld());
 
     if (!NavSys)
     {
@@ -279,30 +329,42 @@ bool AEnemySpawner::FindFreeSpawnLocation(
         EnemyClass->GetDefaultObject<AEnemyAI>();
 
     if (!IsValid(EnemyDefault))
+    {
         return false;
+    }
 
     const UCapsuleComponent* Capsule =
         EnemyDefault->GetCapsuleComponent();
 
     if (!Capsule)
+    {
         return false;
+    }
 
     const float CapsuleRadius =
-        Capsule->GetUnscaledCapsuleRadius();
+        Capsule->GetScaledCapsuleRadius();
 
     const float CapsuleHalfHeight =
-        Capsule->GetUnscaledCapsuleHalfHeight();
+        Capsule->GetScaledCapsuleHalfHeight();
+
+    const FVector Center =
+        Point->GetActorLocation();
+
+    const int32 Attempts =
+        FMath::Max(1, MaxSpawnAttempts);
+
+    const float Gap =
+        FMath::Max(5.f, MinimumSpawnDistance);
+
+    // Conservative step for a compact grid.
+    const float RingStep =
+        CapsuleRadius * 2.f + Gap;
 
     const FCollisionShape SpawnShape =
         FCollisionShape::MakeCapsule(
             CapsuleRadius,
             CapsuleHalfHeight
         );
-
-    const FVector Center = Point->GetActorLocation();
-
-    const int32 Attempts =
-        FMath::Max(1, MaxSpawnAttempts);
 
     for (int32 Attempt = 0;
         Attempt < Attempts;
@@ -312,25 +374,31 @@ bool AEnemySpawner::FindFreeSpawnLocation(
 
         if (Attempt > 0)
         {
-            const int32 Ring =
-                ((Attempt - 1) / 8) + 1;
+            // First ring: 8 positions.
+            // Next rings: 16, 24, 32, etc.
+            int32 RemainingSlot = Attempt - 1;
+            int32 Ring = 1;
+            int32 SlotsInRing = 8;
 
-            const int32 PositionInRing =
-                (Attempt - 1) % 8;
+            while (RemainingSlot >= SlotsInRing)
+            {
+                RemainingSlot -= SlotsInRing;
+                ++Ring;
+                SlotsInRing = Ring * 8;
+            }
 
-            const float RingStep = FMath::Max(
-                MinimumSpawnDistance,
-                CapsuleRadius * 2.0f + 10.0f
-            );
+            const float Radius =
+                Ring * RingStep;
 
-            const float Radius = FMath::Min(
-                SpawnSearchRadius,
-                Ring * RingStep
-            );
+            if (Radius > SpawnSearchRadius)
+            {
+                continue;
+            }
 
             const float Angle =
-                (2.0f * PI * PositionInRing / 8.0f) +
-                Ring * 0.35f;
+                (2.f * PI * RemainingSlot /
+                    SlotsInRing) +
+                Ring * 0.15f;
 
             Candidate.X +=
                 FMath::Cos(Angle) * Radius;
@@ -344,40 +412,52 @@ bool AEnemySpawner::FindFreeSpawnLocation(
         if (!NavSys->ProjectPointToNavigation(
             Candidate,
             NavLocation,
-            FVector(100.0f, 100.0f, 250.0f)
-        ))
+            FVector(60.f, 60.f, 250.f)))
         {
             continue;
         }
 
+        // Navigation gives the ground position.
+        // ACharacter needs the capsule center.
         const FVector SpawnLocation =
             NavLocation.Location +
             FVector(
-                0.0f,
-                0.0f,
-                CapsuleHalfHeight + 2.0f
+                0.f,
+                0.f,
+                CapsuleHalfHeight + 2.f
             );
 
         if (FVector::Dist2D(
             SpawnLocation, Center) >
-            SpawnSearchRadius + 1.0f)
+            SpawnSearchRadius + 1.f)
         {
             continue;
         }
 
-        if (!IsFarEnoughFromEnemies(SpawnLocation))
+        if (!IsFarEnoughFromEnemies(
+            SpawnLocation,
+            CapsuleRadius,
+            CapsuleHalfHeight))
+        {
             continue;
+        }
+
+        FCollisionQueryParams QueryParams;
+        QueryParams.AddIgnoredActor(this);
 
         const bool bBlocked =
             GetWorld()->OverlapBlockingTestByChannel(
                 SpawnLocation,
                 FQuat::Identity,
                 ECC_Pawn,
-                SpawnShape
+                SpawnShape,
+                QueryParams
             );
 
         if (bBlocked)
+        {
             continue;
+        }
 
         OutLocation = SpawnLocation;
         return true;
@@ -387,100 +467,60 @@ bool AEnemySpawner::FindFreeSpawnLocation(
 }
 
 // ==========================================
-// SPAWN FROM GROUP
+// SPAWN ONE ENEMY
 // ==========================================
 
-bool AEnemySpawner::TrySpawnFromGroup(
-    FActiveSpawnGroup& Group
+bool AEnemySpawner::SpawnEnemy(
+    FActiveSpawnGroup& Group,
+    TSubclassOf<AEnemyAI> EnemyClass,
+    int32& RemainingCount
 )
 {
-    if (!Group.HasPendingEnemies())
+    if (RemainingCount <= 0 ||
+        !EnemyClass ||
+        !IsValid(WaveManager) ||
+        !IsValid(Capitol))
+    {
         return false;
+    }
 
     ATargetPoint* Point = Group.SpawnPoint.Get();
 
-    if (!IsValid(Point) ||
-        !IsValid(Capitol) ||
-        !IsValid(WaveManager))
+    if (!IsValid(Point))
     {
         return false;
     }
-
-    // Select enemy type.
-    enum class ESpawnEnemyType
-    {
-        Swordsman,
-        Mage,
-        Torchbearer
-    };
-
-    ESpawnEnemyType SpawnType;
-    TSubclassOf<AEnemyAI> ClassToSpawn = nullptr;
-
-    if (Group.RemainingSwordsmen > 0)
-    {
-        SpawnType = ESpawnEnemyType::Swordsman;
-        ClassToSpawn = SwordsmanClass;
-    }
-    else if (Group.RemainingMages > 0)
-    {
-        SpawnType = ESpawnEnemyType::Mage;
-        ClassToSpawn = MageClass;
-    }
-    else if (Group.RemainingTorchbearers > 0)
-    {
-        SpawnType = ESpawnEnemyType::Torchbearer;
-        ClassToSpawn = TorchbearerClass;
-    }
-    else
-    {
-        return false;
-    }
-
-    if (!ClassToSpawn)
-        return false;
 
     FVector SpawnLocation;
 
     if (!FindFreeSpawnLocation(
         Point,
-        ClassToSpawn,
-        SpawnLocation
-    ))
+        EnemyClass,
+        SpawnLocation))
     {
         return false;
     }
 
-    FActorSpawnParameters SpawnParams;
+    FActorSpawnParameters Params;
 
-    SpawnParams.SpawnCollisionHandlingOverride =
-        ESpawnActorCollisionHandlingMethod::DontSpawnIfColliding;
+    Params.SpawnCollisionHandlingOverride =
+        ESpawnActorCollisionHandlingMethod::
+        DontSpawnIfColliding;
 
-    AEnemyAI* Enemy = GetWorld()->SpawnActor<AEnemyAI>(
-        ClassToSpawn,
-        SpawnLocation,
-        Point->GetActorRotation(),
-        SpawnParams
-    );
+    AEnemyAI* Enemy =
+        GetWorld()->SpawnActor<AEnemyAI>(
+            EnemyClass,
+            SpawnLocation,
+            Point->GetActorRotation(),
+            Params
+        );
 
     if (!IsValid(Enemy))
-        return false;
-
-    // Decrement the correct enemy counter.
-    switch (SpawnType)
     {
-    case ESpawnEnemyType::Swordsman:
-        --Group.RemainingSwordsmen;
-        break;
-
-    case ESpawnEnemyType::Mage:
-        --Group.RemainingMages;
-        break;
-
-    case ESpawnEnemyType::Torchbearer:
-        --Group.RemainingTorchbearers;
-        break;
+        return false;
     }
+
+    --RemainingCount;
 
     RegisteredEnemies.Add(
         TWeakObjectPtr<AEnemyAI>(Enemy)
@@ -496,12 +536,102 @@ bool AEnemySpawner::TrySpawnFromGroup(
     Enemy->SetCapitol(Capitol.Get());
 
     UE_LOG(LogTemp, Warning,
-        TEXT("[EnemySpawner] Spawned %s at %s"),
+        TEXT("[EnemySpawner] Spawned %s at %s | Location: %s"),
         *Enemy->GetName(),
-        *Point->GetName()
-    );
+        *Point->GetName(),
+        *SpawnLocation.ToString());
 
     return true;
+}
+
+// ==========================================
+// SPAWN FROM GROUP
+// ==========================================
+
+bool AEnemySpawner::TrySpawnFromGroup(
+    FActiveSpawnGroup& Group
+)
+{
+    if (!Group.HasPendingEnemies())
+    {
+        return false;
+    }
+
+    if (!Group.SpawnPoint.IsValid())
+    {
+        return false;
+    }
+
+    bool bSpawned = false;
+
+    // Spawn a swordsman and mage in the SAME
+    // scheduler call, without SpawnInterval.
+    if (Group.RemainingSwordsmen > 0 &&
+        Group.RemainingMages > 0)
+    {
+        const bool bSwordsmanSpawned =
+            SpawnEnemy(
+                Group,
+                SwordsmanClass,
+                Group.RemainingSwordsmen
+            );
+
+        if (!bSwordsmanSpawned)
+        {
+            return false;
+        }
+
+        bSpawned = true;
+
+        // The mage appears immediately next to
+        // the swordsman, if space is available.
+        const bool bMageSpawned =
+            SpawnEnemy(
+                Group,
+                MageClass,
+                Group.RemainingMages
+            );
+
+        if (!bMageSpawned)
+        {
+            UE_LOG(LogTemp, Warning,
+                TEXT("[EnemySpawner] Mage could not spawn beside swordsman. Will retry."));
+        }
+
+        return bSpawned;
+    }
+
+    // Spawn any remaining swordsmen.
+    if (Group.RemainingSwordsmen > 0)
+    {
+        return SpawnEnemy(
+            Group,
+            SwordsmanClass,
+            Group.RemainingSwordsmen
+        );
+    }
+
+    // Spawn any remaining mages.
+    if (Group.RemainingMages > 0)
+    {
+        return SpawnEnemy(
+            Group,
+            MageClass,
+            Group.RemainingMages
+        );
+    }
+
+    // Spawn torchbearers normally.
+    if (Group.RemainingTorchbearers > 0)
+    {
+        return SpawnEnemy(
+            Group,
+            TorchbearerClass,
+            Group.RemainingTorchbearers
+        );
+    }
+
+    return false;
 }
 
 // ==========================================
@@ -511,7 +641,9 @@ bool AEnemySpawner::TrySpawnFromGroup(
 void AEnemySpawner::SpawnNextEnemy()
 {
     if (!bIsSpawning || !IsValid(WaveManager))
+    {
         return;
+    }
 
     if (!HasPendingEnemies())
     {
@@ -521,7 +653,8 @@ void AEnemySpawner::SpawnNextEnemy()
 
     bool bSpawnSuccessful = false;
 
-    const int32 GroupCount = ActiveGroups.Num();
+    const int32 GroupCount =
+        ActiveGroups.Num();
 
     for (int32 Attempt = 0;
         Attempt < GroupCount;
@@ -534,7 +667,9 @@ void AEnemySpawner::SpawnNextEnemy()
             ActiveGroups[GroupIndex];
 
         if (!Group.HasPendingEnemies())
+        {
             continue;
+        }
 
         if (TrySpawnFromGroup(Group))
         {
@@ -552,7 +687,8 @@ void AEnemySpawner::SpawnNextEnemy()
         return;
     }
 
-    const float NextDelay = bSpawnSuccessful
+    const float NextDelay =
+        bSpawnSuccessful
         ? CurrentSpawnInterval
         : FMath::Max(0.1f, RetryInterval);
 
@@ -580,11 +716,12 @@ void AEnemySpawner::HandleEnemyDied(
 )
 {
     if (!IsValid(DeadEnemy))
+    {
         return;
+    }
 
     if (RegisteredEnemies.Remove(
-        TWeakObjectPtr<AEnemyAI>(DeadEnemy)
-    ) == 0)
+        TWeakObjectPtr<AEnemyAI>(DeadEnemy)) == 0)
     {
         return;
     }
@@ -596,8 +733,7 @@ void AEnemySpawner::HandleEnemyDied(
 
     UE_LOG(LogTemp, Warning,
         TEXT("[EnemySpawner] Enemy died: %s"),
-        *DeadEnemy->GetName()
-    );
+        *DeadEnemy->GetName());
 
     if (IsValid(WaveManager))
     {
@@ -612,9 +748,12 @@ void AEnemySpawner::HandleEnemyDied(
 void AEnemySpawner::CompleteSpawning()
 {
     if (!bIsSpawning)
+    {
         return;
+    }
 
-    GetWorldTimerManager().ClearTimer(SpawnTimer);
+    GetWorldTimerManager().ClearTimer(
+        SpawnTimer);
 
     bIsSpawning = false;
 
@@ -635,7 +774,8 @@ void AEnemySpawner::EndPlay(
     const EEndPlayReason::Type EndPlayReason
 )
 {
-    GetWorldTimerManager().ClearTimer(SpawnTimer);
+    GetWorldTimerManager().ClearTimer(
+        SpawnTimer);
 
     for (const TWeakObjectPtr<AEnemyAI>& EnemyPtr :
         RegisteredEnemies)

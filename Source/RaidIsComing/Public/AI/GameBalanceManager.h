@@ -244,10 +244,18 @@ struct FGeneralBalanceSettings
         Category = "Economy", meta = (ClampMin = "0"))
     int32 StartingGold = 300;
 
-    // NEW: Reward for successfully defending each wave.
     UPROPERTY(EditAnywhere, BlueprintReadWrite,
         Category = "Economy", meta = (ClampMin = "0"))
     int32 WaveCompletionReward = 100;
+
+    // 0.0 = barrier takes no damage from towers.
+    // 0.5 = barrier takes half of normal damage.
+    // 1.0 = barrier takes full normal damage.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite,
+        Category = "Combat|Barrier",
+        meta = (ClampMin = "0.0", ClampMax = "1.0",
+            UIMin = "0.0", UIMax = "1.0"))
+    float BarrierDamageMultiplier = 0.5f;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite,
         Category = "Buildings", meta = (ClampMin = "1.0"))

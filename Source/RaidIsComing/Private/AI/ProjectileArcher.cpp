@@ -1,9 +1,78 @@
 
 #include "AI/ProjectileArcher.h"
+
 #include "AI/AIBase.h"
+#include "AI/EnemyAI.h"
+#include "AI/EnemyBarrier.h"
+#include "AI/GameBalanceManager.h"
 
 #include "Components/SceneComponent.h"
 #include "Engine/World.h"
+#include "EngineUtils.h"
+
+namespace
+{
+    AEnemyBarrier* FindProtectingBarrier(
+        const AEnemyAI* Enemy)
+    {
+        if (!IsValid(Enemy) || !Enemy->GetWorld())
+        {
+            return nullptr;
+        }
+
+        AEnemyBarrier* ClosestBarrier = nullptr;
+        float ClosestDistanceSq = TNumericLimits<float>::Max();
+
+        for (TActorIterator<AEnemyBarrier> It(Enemy->GetWorld());
+            It; ++It)
+        {
+            AEnemyBarrier* Barrier = *It;
+
+            if (!IsValid(Barrier) ||
+                !Barrier->IsBarrierActive() ||
+                !Barrier->ContainsLocation(
+                    Enemy->GetActorLocation()))
+            {
+                continue;
+            }
+
+            const float DistanceSq = FVector::DistSquared(
+                Barrier->GetActorLocation(),
+                Enemy->GetActorLocation()
+            );
+
+            if (DistanceSq < ClosestDistanceSq)
+            {
+                ClosestDistanceSq = DistanceSq;
+                ClosestBarrier = Barrier;
+            }
+        }
+
+        return ClosestBarrier;
+    }
+
+    float GetBarrierDamageMultiplier(
+        const UObject* WorldContext)
+    {
+        const AGameBalanceManager* Balance =
+            AGameBalanceManager::GetBalanceManager(WorldContext);
+
+        if (!IsValid(Balance))
+        {
+            return 0.5f;
+        }
+
+        return FMath::Clamp(
+            Balance->General.BarrierDamageMultiplier,
+            0.0f,
+            1.0f
+        );
+    }
+}
+
+// ==========================================
+// CONSTRUCTOR
+// ==========================================
 
 AProjectileArcher::AProjectileArcher()
 {
@@ -15,12 +84,15 @@ AProjectileArcher::AProjectileArcher()
 
     RootComponent = SceneRoot;
 
-    // Физические столкновения не используем.
-    // Попадание определяем программно.
+    // Projectile collisions are handled in code.
     SetActorEnableCollision(false);
 
     InitialLifeSpan = 10.0f;
 }
+
+// ==========================================
+// BEGIN PLAY
+// ==========================================
 
 void AProjectileArcher::BeginPlay()
 {
@@ -28,6 +100,10 @@ void AProjectileArcher::BeginPlay()
 
     StartLocation = GetActorLocation();
 }
+
+// ==========================================
+// INITIALIZATION
+// ==========================================
 
 void AProjectileArcher::InitializeProjectile(
     AAIBase* NewTarget,
@@ -45,7 +121,6 @@ void AProjectileArcher::InitializeProjectile(
 
     StartLocation = GetActorLocation();
 
-    // Продолжительность полёта зависит от расстояния.
     const float Distance = FVector::Dist(
         StartLocation,
         NewTarget->GetActorLocation()
@@ -60,6 +135,10 @@ void AProjectileArcher::InitializeProjectile(
     bInitialized = true;
 }
 
+// ==========================================
+// MOVEMENT
+// ==========================================
+
 void AProjectileArcher::Tick(float DeltaTime)
 {
     Super::Tick(DeltaTime);
@@ -69,8 +148,8 @@ void AProjectileArcher::Tick(float DeltaTime)
         return;
     }
 
-    // Цель уничтожена или уже мертва.
-    if (!TargetActor.IsValid() || !TargetActor->IsAlive())
+    if (!TargetActor.IsValid() ||
+        !TargetActor->IsAlive())
     {
         Destroy();
         return;
@@ -78,32 +157,26 @@ void AProjectileArcher::Tick(float DeltaTime)
 
     ElapsedTime += DeltaTime;
 
-    // Прогресс полёта: от 0 до 1.
     const float Alpha = FMath::Clamp(
         ElapsedTime / FlightDuration,
         0.0f,
         1.0f
     );
 
-    // Обновляем конечную точку с учётом движения врага.
     const FVector EndLocation =
         TargetActor->GetActorLocation();
 
-    // Линейное движение от старта к цели.
     FVector NewLocation = FMath::Lerp(
         StartLocation,
         EndLocation,
         Alpha
     );
 
-    // Добавляем вертикальную дугу.
-    // В начале и конце высота равна нулю.
     const float Height =
         4.0f * ArcHeight * Alpha * (1.0f - Alpha);
 
     NewLocation.Z += Height;
 
-    // Поворачиваем стрелу по направлению движения.
     const FVector Direction =
         NewLocation - GetActorLocation();
 
@@ -114,7 +187,6 @@ void AProjectileArcher::Tick(float DeltaTime)
 
     SetActorLocation(NewLocation);
 
-    // Проверяем попадание.
     const float DistanceToTarget = FVector::Dist(
         NewLocation,
         EndLocation
@@ -126,20 +198,67 @@ void AProjectileArcher::Tick(float DeltaTime)
     }
 }
 
+// ==========================================
+// DAMAGE
+// ==========================================
+
 void AProjectileArcher::HitTarget()
 {
-    if (TargetActor.IsValid() && TargetActor->IsAlive())
-    {
-        TargetActor->ReceiveDamage(ProjectileDamage);
+    AAIBase* Target = TargetActor.Get();
 
-        UE_LOG(
-            LogTemp,
-            Warning,
-            TEXT("[Arrow] Hit %s | Damage: %.1f"),
-            *TargetActor->GetName(),
-            ProjectileDamage
-        );
+    if (!IsValid(Target) || !Target->IsAlive())
+    {
+        Destroy();
+        return;
     }
+
+    AEnemyAI* Enemy = Cast<AEnemyAI>(Target);
+
+    if (IsValid(Enemy))
+    {
+        AEnemyBarrier* Barrier =
+            FindProtectingBarrier(Enemy);
+
+        if (IsValid(Barrier))
+        {
+            const float Multiplier =
+                GetBarrierDamageMultiplier(this);
+
+            const float BarrierDamage =
+                ProjectileDamage * Multiplier;
+
+            const float HPBefore =
+                Barrier->CurrentBarrierHP;
+
+            Barrier->AbsorbDamage(BarrierDamage);
+
+            UE_LOG(
+                LogTemp,
+                Log,
+                TEXT("[Arrow] Barrier hit | Target: %s | Damage: %.1f | HP: %.1f -> %.1f"),
+                *GetNameSafe(Enemy),
+                BarrierDamage,
+                HPBefore,
+                Barrier->CurrentBarrierHP
+            );
+
+            // The barrier absorbed this projectile.
+            // Do not damage the protected enemy.
+            Destroy();
+            return;
+        }
+    }
+
+    // No active barrier: normal damage.
+    Target->ReceiveDamage(ProjectileDamage);
+
+    UE_LOG(
+        LogTemp,
+        Warning,
+        TEXT("[Arrow] Hit %s | Damage: %.1f"),
+        *GetNameSafe(Target),
+        ProjectileDamage
+    );
 
     Destroy();
 }

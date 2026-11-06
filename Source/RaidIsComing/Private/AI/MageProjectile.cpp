@@ -3,35 +3,94 @@
 
 #include "AI/AIBase.h"
 #include "AI/EnemyAI.h"
+#include "AI/EnemyBarrier.h"
+#include "AI/GameBalanceManager.h"
 
 #include "Components/SceneComponent.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
 
+namespace
+{
+    AEnemyBarrier* FindProtectingBarrier(
+        const AEnemyAI* Enemy)
+    {
+        if (!IsValid(Enemy) || !Enemy->GetWorld())
+        {
+            return nullptr;
+        }
+
+        AEnemyBarrier* ClosestBarrier = nullptr;
+        float ClosestDistanceSq = TNumericLimits<float>::Max();
+
+        for (TActorIterator<AEnemyBarrier> It(Enemy->GetWorld());
+            It; ++It)
+        {
+            AEnemyBarrier* Barrier = *It;
+
+            if (!IsValid(Barrier) ||
+                !Barrier->IsBarrierActive() ||
+                !Barrier->ContainsLocation(
+                    Enemy->GetActorLocation()))
+            {
+                continue;
+            }
+
+            const float DistanceSq = FVector::DistSquared(
+                Barrier->GetActorLocation(),
+                Enemy->GetActorLocation()
+            );
+
+            if (DistanceSq < ClosestDistanceSq)
+            {
+                ClosestDistanceSq = DistanceSq;
+                ClosestBarrier = Barrier;
+            }
+        }
+
+        return ClosestBarrier;
+    }
+
+    float GetBarrierDamageMultiplier(
+        const UObject* WorldContext)
+    {
+        const AGameBalanceManager* Balance =
+            AGameBalanceManager::GetBalanceManager(WorldContext);
+
+        if (!IsValid(Balance))
+        {
+            return 0.5f;
+        }
+
+        return FMath::Clamp(
+            Balance->General.BarrierDamageMultiplier,
+            0.0f,
+            1.0f
+        );
+    }
+}
+
 // ==========================================
-// Конструктор
+// CONSTRUCTOR
 // ==========================================
 
 AMageProjectile::AMageProjectile()
 {
     PrimaryActorTick.bCanEverTick = true;
 
-    // Создаём корневой компонент
     SceneRoot = CreateDefaultSubobject<USceneComponent>(
         TEXT("SceneRoot")
     );
 
     RootComponent = SceneRoot;
 
-    // Попадание определяем программно
     SetActorEnableCollision(false);
 
-    // Защита от бесконечного существования снаряда
     InitialLifeSpan = 10.0f;
 }
 
 // ==========================================
-// Начало игры
+// BEGIN PLAY
 // ==========================================
 
 void AMageProjectile::BeginPlay()
@@ -40,7 +99,7 @@ void AMageProjectile::BeginPlay()
 }
 
 // ==========================================
-// Инициализация магического снаряда
+// INITIALIZATION
 // ==========================================
 
 void AMageProjectile::InitializeProjectile(
@@ -48,7 +107,6 @@ void AMageProjectile::InitializeProjectile(
     float NewDamage,
     float NewSplashRadius)
 {
-    // Проверяем, существует ли противник
     if (!IsValid(NewTarget) || !NewTarget->IsAlive())
     {
         Destroy();
@@ -57,13 +115,11 @@ void AMageProjectile::InitializeProjectile(
 
     TargetActor = NewTarget;
 
-    // Получаем урон от башни
     ProjectileDamage = FMath::Max(
         0.0f,
         NewDamage
     );
 
-    // Получаем радиус взрыва от башни
     ProjectileSplashRadius = FMath::Max(
         0.0f,
         NewSplashRadius
@@ -74,23 +130,20 @@ void AMageProjectile::InitializeProjectile(
 }
 
 // ==========================================
-// Движение магического шара
+// MOVEMENT
 // ==========================================
 
 void AMageProjectile::Tick(float DeltaTime)
 {
     Super::Tick(DeltaTime);
 
-    // Снаряд ещё не получил данные от башни
-    // либо уже взорвался
     if (!bInitialized || bHasExploded)
     {
         return;
     }
 
-    // Если цель уничтожена до попадания,
-    // удаляем снаряд
-    if (!TargetActor.IsValid() || !TargetActor->IsAlive())
+    if (!TargetActor.IsValid() ||
+        !TargetActor->IsAlive())
     {
         Destroy();
         return;
@@ -99,49 +152,38 @@ void AMageProjectile::Tick(float DeltaTime)
     const FVector CurrentLocation =
         GetActorLocation();
 
-    // Получаем актуальную позицию движущейся цели
     const FVector TargetLocation =
         TargetActor->GetActorLocation();
 
-    // Вектор до противника
     const FVector ToTarget =
         TargetLocation - CurrentLocation;
 
-    // Расстояние до противника
-    const float Distance =
-        ToTarget.Size();
+    const float Distance = ToTarget.Size();
 
-    // Если шар уже достиг противника
     if (Distance <= HitRadius)
     {
         HitTarget();
         return;
     }
 
-    // Направление движения
     const FVector Direction =
         ToTarget.GetSafeNormal();
 
-    // Расстояние, которое шар проходит за кадр
     const float Step =
         FMath::Max(FlightSpeed, 1.0f) * DeltaTime;
 
-    // Если за этот кадр шар должен достичь цели
     if (Step >= Distance)
     {
         SetActorLocation(TargetLocation);
-
         HitTarget();
         return;
     }
 
-    // Перемещаем магический шар
     const FVector NewLocation =
         CurrentLocation + Direction * Step;
 
     SetActorLocation(NewLocation);
 
-    // Поворачиваем снаряд по направлению движения
     if (!Direction.IsNearlyZero())
     {
         SetActorRotation(Direction.Rotation());
@@ -149,12 +191,11 @@ void AMageProjectile::Tick(float DeltaTime)
 }
 
 // ==========================================
-// Попадание магического шара
+// HIT
 // ==========================================
 
 void AMageProjectile::HitTarget()
 {
-    // Защита от повторного взрыва
     if (!bInitialized || bHasExploded)
     {
         return;
@@ -163,11 +204,9 @@ void AMageProjectile::HitTarget()
     bHasExploded = true;
     bInitialized = false;
 
-    // Запоминаем точку попадания
     const FVector ImpactLocation =
         GetActorLocation();
 
-    // Наносим массовый урон
     ApplySplashDamage(ImpactLocation);
 
     UE_LOG(
@@ -178,12 +217,11 @@ void AMageProjectile::HitTarget()
         ProjectileSplashRadius
     );
 
-    // Удаляем снаряд после взрыва
     Destroy();
 }
 
 // ==========================================
-// Массовый урон
+// SPLASH DAMAGE
 // ==========================================
 
 void AMageProjectile::ApplySplashDamage(
@@ -196,32 +234,100 @@ void AMageProjectile::ApplySplashDamage(
         return;
     }
 
-    int32 HitEnemiesCount = 0;
+    // Snapshot of enemies and their protection
+    // before any damage is applied.
+    TArray<TWeakObjectPtr<AEnemyAI>> EnemiesInRange;
 
-    // Перебираем всех вражеских AI на уровне
+    TSet<TWeakObjectPtr<AEnemyAI>> ProtectedEnemies;
+
+    TSet<TWeakObjectPtr<AEnemyBarrier>> HitBarriers;
+
     for (TActorIterator<AEnemyAI> It(World); It; ++It)
     {
         AEnemyAI* Enemy = *It;
 
-        // Пропускаем несуществующих и мёртвых врагов
         if (!IsValid(Enemy) || !Enemy->IsAlive())
         {
             continue;
         }
 
-        // Расстояние от центра взрыва до противника
         const float Distance = FVector::Dist(
             ImpactLocation,
             Enemy->GetActorLocation()
         );
 
-        // Проверяем попадание в радиус взрыва
         if (Distance > ProjectileSplashRadius)
         {
             continue;
         }
 
-        // Наносим урон конкретному противнику
+        EnemiesInRange.Add(Enemy);
+
+        AEnemyBarrier* Barrier =
+            FindProtectingBarrier(Enemy);
+
+        if (IsValid(Barrier))
+        {
+            ProtectedEnemies.Add(Enemy);
+            HitBarriers.Add(Barrier);
+        }
+    }
+
+    const float Multiplier =
+        GetBarrierDamageMultiplier(this);
+
+    const float BarrierDamage =
+        ProjectileDamage * Multiplier;
+
+    // Each affected barrier takes damage only once.
+    for (const TWeakObjectPtr<AEnemyBarrier>& BarrierPtr
+        : HitBarriers)
+    {
+        AEnemyBarrier* Barrier = BarrierPtr.Get();
+
+        if (!IsValid(Barrier) ||
+            !Barrier->IsBarrierActive())
+        {
+            continue;
+        }
+
+        const float HPBefore =
+            Barrier->CurrentBarrierHP;
+
+        Barrier->AbsorbDamage(BarrierDamage);
+
+        UE_LOG(
+            LogTemp,
+            Log,
+            TEXT("[MageProjectile] Barrier hit | Damage: %.1f | HP: %.1f -> %.1f"),
+            BarrierDamage,
+            HPBefore,
+            Barrier->CurrentBarrierHP
+        );
+    }
+
+    int32 HitEnemiesCount = 0;
+    int32 BlockedEnemiesCount = 0;
+
+    for (const TWeakObjectPtr<AEnemyAI>& EnemyPtr
+        : EnemiesInRange)
+    {
+        AEnemyAI* Enemy = EnemyPtr.Get();
+
+        if (!IsValid(Enemy) || !Enemy->IsAlive())
+        {
+            continue;
+        }
+
+        // An enemy protected at the beginning of
+        // this explosion cannot take its damage.
+        // This remains true if the barrier breaks.
+        if (ProtectedEnemies.Contains(EnemyPtr))
+        {
+            ++BlockedEnemiesCount;
+            continue;
+        }
+
         Enemy->ReceiveDamage(ProjectileDamage);
 
         ++HitEnemiesCount;
@@ -229,17 +335,18 @@ void AMageProjectile::ApplySplashDamage(
         UE_LOG(
             LogTemp,
             Warning,
-            TEXT("[MageProjectile] Splash hit: %s | Damage: %.1f | Distance: %.1f"),
+            TEXT("[MageProjectile] Splash hit: %s | Damage: %.1f"),
             *Enemy->GetName(),
-            ProjectileDamage,
-            Distance
+            ProjectileDamage
         );
     }
 
     UE_LOG(
         LogTemp,
         Warning,
-        TEXT("[MageProjectile] Total enemies hit: %d"),
-        HitEnemiesCount
+        TEXT("[MageProjectile] Explosion result | Enemies hit: %d | Protected: %d | Barriers hit: %d"),
+        HitEnemiesCount,
+        BlockedEnemiesCount,
+        HitBarriers.Num()
     );
 }
