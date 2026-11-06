@@ -1,6 +1,6 @@
 
 #pragma once
-
+#include "AI/GameBalanceManager.h"
 #include "CoreMinimal.h"
 #include "PlayerAI.h"
 #include "TimerManager.h"

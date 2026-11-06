@@ -1,7 +1,11 @@
 
 #include "AI/WaveManager.h"
 
+#include "AI/GameBalanceManager.h"
+#include "Construction/RICMoneyComponent.h"
+
 #include "Engine/World.h"
+#include "GameFramework/PlayerController.h"
 #include "TimerManager.h"
 
 // ==========================================
@@ -48,7 +52,6 @@ void AWaveManager::EndPlay(
 
 void AWaveManager::StartNextWave()
 {
-    // Manual start is allowed only during preparation.
     if (bDispatchingWaveEvents ||
         LevelPhase != ERICLevelPhase::Preparation)
     {
@@ -99,7 +102,6 @@ void AWaveManager::StartNextWaveInternal()
     int32 TotalMages = 0;
     int32 TotalTorchbearers = 0;
 
-    // Count all enemy types in the wave.
     for (const FWaveSpawnGroup& Group :
         NextWave.SpawnGroups)
     {
@@ -131,7 +133,6 @@ void AWaveManager::StartNextWaveInternal()
         TotalTorchbearers,
         NextWave.SpawnGroups.Num());
 
-    // Notify EnemySpawner and other systems.
     OnWaveStarted.Broadcast(
         GetCurrentWaveNumber());
 }
@@ -143,7 +144,9 @@ void AWaveManager::StartNextWaveInternal()
 void AWaveManager::RegisterEnemy()
 {
     if (WaveState != EWaveState::Spawning)
+    {
         return;
+    }
 
     ++AliveEnemies;
 
@@ -181,7 +184,9 @@ void AWaveManager::NotifyEnemyDied()
 void AWaveManager::FinishSpawning()
 {
     if (WaveState != EWaveState::Spawning)
+    {
         return;
+    }
 
     bSpawningFinished = true;
     WaveState = EWaveState::InProgress;
@@ -195,13 +200,75 @@ void AWaveManager::FinishSpawning()
 }
 
 // ==========================================
+// WAVE REWARD
+// ==========================================
+
+void AWaveManager::GrantWaveCompletionReward()
+{
+    UWorld* World = GetWorld();
+
+    if (!World)
+    {
+        return;
+    }
+
+    AGameBalanceManager* Balance =
+        AGameBalanceManager::GetBalanceManager(this);
+
+    if (!IsValid(Balance))
+    {
+        UE_LOG(LogTemp, Warning,
+            TEXT("[WaveManager] Wave reward skipped: GameBalanceManager not found"));
+        return;
+    }
+
+    const int32 Reward = FMath::Max(
+        0,
+        Balance->General.WaveCompletionReward
+    );
+
+    if (Reward <= 0)
+    {
+        return;
+    }
+
+    APlayerController* PlayerController =
+        World->GetFirstPlayerController();
+
+    if (!IsValid(PlayerController))
+    {
+        UE_LOG(LogTemp, Warning,
+            TEXT("[WaveManager] Wave reward failed: PlayerController not found"));
+        return;
+    }
+
+    URICMoneyComponent* MoneyComponent =
+        PlayerController->FindComponentByClass<URICMoneyComponent>();
+
+    if (!IsValid(MoneyComponent))
+    {
+        UE_LOG(LogTemp, Warning,
+            TEXT("[WaveManager] Wave reward failed: MoneyComponent not found on PlayerController"));
+        return;
+    }
+
+    const int32 AddedMoney =
+        MoneyComponent->AddMoney(Reward);
+
+    UE_LOG(LogTemp, Warning,
+        TEXT("[WaveManager] Wave %d reward | Configured: %d | Added: %d | Balance: %d"),
+        GetCurrentWaveNumber(),
+        Reward,
+        AddedMoney,
+        MoneyComponent->CurrentMoney);
+}
+
+// ==========================================
 // CHECK WAVE COMPLETION
 // ==========================================
 
 void AWaveManager::CheckWaveCompletion()
 {
-    // A wave ends only when all enemies are spawned
-    // and no living enemies remain.
     if (!bSpawningFinished ||
         AliveEnemies > 0 ||
         WaveState != EWaveState::InProgress)
@@ -212,6 +279,8 @@ void AWaveManager::CheckWaveCompletion()
     TGuardValue<bool> EventGuard(
         bDispatchingWaveEvents, true);
 
+    // Set the completed state first to prevent
+    // duplicate rewards from repeated callbacks.
     WaveState = EWaveState::Completed;
 
     GetWorldTimerManager().ClearTimer(
@@ -228,10 +297,13 @@ void AWaveManager::CheckWaveCompletion()
         TEXT("[WaveManager] Wave %d completed!"),
         GetCurrentWaveNumber());
 
+    // Give the player gold before broadcasting
+    // the wave completion event.
+    GrantWaveCompletionReward();
+
     OnWaveCompleted.Broadcast(
         GetCurrentWaveNumber());
 
-    // Last wave completed.
     if (bLastWave)
     {
         UE_LOG(LogTemp, Warning,
@@ -241,7 +313,6 @@ void AWaveManager::CheckWaveCompletion()
         return;
     }
 
-    // Schedule the next wave automatically.
     const float Delay =
         FMath::Max(0.1f, TimeBetweenWaves);
 

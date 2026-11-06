@@ -25,6 +25,68 @@ AEnemyMageAI::AEnemyMageAI()
     AcceptanceRadius = 100.f;
 }
 
+void AEnemyMageAI::ApplyEnemyBalance()
+{
+    Super::ApplyEnemyBalance();
+
+    AGameBalanceManager* Balance =
+        AGameBalanceManager::GetBalanceManager(this);
+
+    if (!IsValid(Balance))
+    {
+        return;
+    }
+
+    const FMageBalanceSettings& Settings =
+        Balance->Mage;
+
+    BarrierHP =
+        FMath::Max(1.0f, Settings.BarrierHealth);
+
+    BarrierCooldown =
+        FMath::Max(0.0f, Settings.BarrierCooldown);
+
+    BarrierDuration =
+        FMath::Max(0.0f, Settings.BarrierDuration);
+
+    BarrierSpawnDelay =
+        FMath::Max(0.0f, Settings.BarrierSpawnDelay);
+
+    AllyDetectionRadius =
+        FMath::Max(0.0f, Settings.AllyDetectionRadius);
+
+    FollowDistance =
+        FMath::Max(0.0f, Settings.FollowDistance);
+
+    MageAcceleration =
+        FMath::Max(0.0f, Settings.MageAcceleration);
+
+    MageBrakingDeceleration =
+        FMath::Max(0.0f, Settings.MageBrakingDeceleration);
+
+    SpeedChangeRate =
+        FMath::Max(0.0f, Settings.SpeedChangeRate);
+
+    FollowUpdateInterval =
+        FMath::Max(0.01f, Settings.FollowUpdateInterval);
+
+    NormalMovementSpeed =
+        FMath::Max(0.0f, Settings.MovementSpeed);
+
+    // Preserve the existing catch-up speed difference.
+    MageMovementSpeed =
+        FMath::Max(MageMovementSpeed, NormalMovementSpeed);
+
+    CurrentDesiredSpeed = NormalMovementSpeed;
+
+    UE_LOG(LogTemp, Log,
+        TEXT("[Mage] Balance applied | HP=%.1f BarrierHP=%.1f Cooldown=%.2f Speed=%.1f"),
+        MaxHP,
+        BarrierHP,
+        BarrierCooldown,
+        NormalMovementSpeed);
+}
+
 void AEnemyMageAI::BeginPlay()
 {
     Super::BeginPlay();

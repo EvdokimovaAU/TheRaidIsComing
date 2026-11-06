@@ -90,6 +90,9 @@ public:
     UFUNCTION(BlueprintCallable, Category = "AI|Movement")
     virtual void OnObstacleDetected(AActor* Obstacle);
 
+    UFUNCTION(BlueprintCallable, Category = "AI|Balance")
+    virtual void ApplyEnemyBalance();
+
     virtual void Die() override;
 
 protected:

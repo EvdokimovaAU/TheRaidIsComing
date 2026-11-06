@@ -26,6 +26,22 @@ void AArcherTowerAI::BeginPlay()
 {
     Super::BeginPlay();
 
+    if (AGameBalanceManager* Balance =
+        AGameBalanceManager::GetBalanceManager(this))
+    {
+        const FTowerBalanceSettings& Settings =
+            Balance->ArcherTower;
+
+        MaxHP = FMath::Max(1.0f, Settings.MaxHealth);
+        CurrentHP = MaxHP;
+
+        Damage = FMath::Max(0.0f, Settings.Damage);
+        AttackRange = FMath::Max(0.0f, Settings.AttackRange);
+        DetectionRadius = AttackRange;
+        AttackCooldown = FMath::Max(0.01f, Settings.AttackCooldown);
+        TargetCheckInterval = FMath::Max(0.01f, Settings.TargetCheckInterval);
+    }
+
     UWorld* World = GetWorld();
     if (!World)
     {

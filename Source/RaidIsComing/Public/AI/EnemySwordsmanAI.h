@@ -1,6 +1,6 @@
 
 #pragma once
-
+#include "AI/GameBalanceManager.h"
 #include "CoreMinimal.h"
 #include "AI/EnemyAI.h"
 #include "EnemySwordsmanAI.generated.h"
@@ -80,6 +80,9 @@ public:
     virtual void Tick(float DeltaSeconds) override;
     virtual void OnObstacleDetected(AActor* Obstacle) override;
     virtual void MoveToTarget() override;
+
+    // Level balance
+    virtual void ApplyEnemyBalance() override;
 
     UFUNCTION(BlueprintCallable, Category = "AI|Wall")
     void StartWallAttack(AActor* Wall);

@@ -1,14 +1,12 @@
 
-#include "AIBase.h"
+#include "AI/AIBase.h"
 #include "Engine/World.h"
 
-// Конструктор
 AAIBase::AAIBase()
 {
     PrimaryActorTick.bCanEverTick = false;
 }
 
-// Начало игры
 void AAIBase::BeginPlay()
 {
     Super::BeginPlay();
@@ -17,7 +15,40 @@ void AAIBase::BeginPlay()
     bIsDead = false;
 }
 
-// Получение урона
+void AAIBase::ApplyCombatBalance(
+    float NewMaxHP,
+    float NewDamage,
+    float NewAttackRange,
+    float NewAttackCooldown)
+{
+    const float OldMaxHP = MaxHP;
+
+    MaxHP = FMath::Max(1.0f, NewMaxHP);
+    Damage = FMath::Max(0.0f, NewDamage);
+    AttackRange = FMath::Max(0.0f, NewAttackRange);
+    AttackCooldown = FMath::Max(0.01f, NewAttackCooldown);
+
+    // Preserve the current health percentage if called
+    // after BeginPlay.
+    if (HasActorBegunPlay() && !bIsDead)
+    {
+        const float HealthRatio =
+            OldMaxHP > 0.0f
+            ? FMath::Clamp(CurrentHP / OldMaxHP, 0.0f, 1.0f)
+            : 1.0f;
+
+        CurrentHP = MaxHP * HealthRatio;
+    }
+
+    UE_LOG(LogTemp, Log,
+        TEXT("[AIBase] %s balance applied: HP=%.1f Damage=%.1f Range=%.1f Cooldown=%.2f"),
+        *GetName(),
+        MaxHP,
+        Damage,
+        AttackRange,
+        AttackCooldown);
+}
+
 void AAIBase::ReceiveDamage(float Amount)
 {
     if (bIsDead || Amount <= 0.0f)
@@ -38,22 +69,19 @@ void AAIBase::ReceiveDamage(float Amount)
         CurrentHP);
 }
 
-// Проверка жизни
 bool AAIBase::IsAlive() const
 {
     return !bIsDead && CurrentHP > 0.0f;
 }
 
-// Проверка цели
 bool AAIBase::IsTargetValid() const
 {
     return IsValid(Target.Get()) && Target->IsAlive();
 }
 
-// Проверка возможности атаки
 bool AAIBase::CanAttack() const
 {
-    if (!IsAlive() || !IsTargetValid())
+    if (!IsAlive() || !IsTargetValid() || !GetWorld())
     {
         return false;
     }
@@ -73,7 +101,6 @@ bool AAIBase::CanAttack() const
     return CurrentTime - LastAttackTime >= AttackCooldown;
 }
 
-// Базовая атака
 void AAIBase::Attack()
 {
     if (!CanAttack())
@@ -86,7 +113,6 @@ void AAIBase::Attack()
     Target->ReceiveDamage(Damage);
 }
 
-// Смерть
 void AAIBase::Die()
 {
     if (bIsDead)

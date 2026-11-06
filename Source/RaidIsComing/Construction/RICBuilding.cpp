@@ -1,6 +1,7 @@
 
 #include "RICBuilding.h"
 
+#include "AI/GameBalanceManager.h"
 #include "Components/StaticMeshComponent.h"
 
 ARICBuilding::ARICBuilding()
@@ -19,13 +20,11 @@ ARICBuilding::ARICBuilding()
     SetCanBeDamaged(false);
 }
 
-
 bool ARICBuilding::IsDestructible() const
 {
     return BuildingType == ERICBuildingType::Barrier ||
         BuildingType == ERICBuildingType::Capitol;
 }
-
 
 bool ARICBuilding::IsAlive() const
 {
@@ -44,6 +43,19 @@ void ARICBuilding::BeginPlay()
     const bool bDestructible = IsDestructible();
 
     SetCanBeDamaged(bDestructible);
+
+    // Only Capitol receives global health settings.
+    if (BuildingType == ERICBuildingType::Capitol)
+    {
+        if (AGameBalanceManager* Balance =
+            AGameBalanceManager::GetBalanceManager(this))
+        {
+            MaxHP = FMath::Max(
+                1.0f,
+                Balance->General.CapitolMaxHealth
+            );
+        }
+    }
 
     if (bDestructible)
     {
@@ -77,7 +89,6 @@ float ARICBuilding::TakeDamage(
     AActor* DamageCauser
 )
 {
-
     if (!IsAlive() ||
         !FMath::IsFinite(DamageAmount) ||
         DamageAmount <= 0.0f)

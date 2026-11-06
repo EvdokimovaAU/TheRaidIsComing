@@ -4,7 +4,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "TimerManager.h"
-
+#include "AI/GameBalanceManager.h"
 #include "EnemySpawner.generated.h"
 
 class AWaveManager;
@@ -90,7 +90,7 @@ protected:
 private:
     UFUNCTION()
     void HandleWaveStarted(int32 WaveNumber);
-
+    void ApplySpawnBalance();
     UFUNCTION()
     void HandleEnemyDied(AEnemyAI* DeadEnemy);
 

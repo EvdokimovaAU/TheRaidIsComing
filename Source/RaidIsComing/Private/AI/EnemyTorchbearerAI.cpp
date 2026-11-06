@@ -26,6 +26,42 @@ AEnemyTorchbearerAI::AEnemyTorchbearerAI()
     AcceptanceRadius = 120.f;
 }
 
+
+void AEnemyTorchbearerAI::ApplyEnemyBalance()
+{
+    Super::ApplyEnemyBalance();
+
+    AGameBalanceManager* Balance =
+        AGameBalanceManager::GetBalanceManager(this);
+
+    if (!IsValid(Balance))
+    {
+        return;
+    }
+
+    const FTorchbearerBalanceSettings& Settings =
+        Balance->Torchbearer;
+
+    FireRange =
+        FMath::Max(0.0f, Settings.FireRange);
+
+    IgniteDelay =
+        FMath::Max(0.01f, Settings.IgniteDelay);
+
+    ReigniteDelay =
+        FMath::Max(0.0f, Settings.ReigniteDelay);
+
+    WallDetectionDistance =
+        FMath::Max(0.0f, Settings.WallDetectionDistance);
+
+    UE_LOG(LogTemp, Log,
+        TEXT("[Torchbearer] Balance applied | FireRange=%.1f IgniteDelay=%.2f ReigniteDelay=%.2f"),
+        FireRange,
+        IgniteDelay,
+        ReigniteDelay);
+}
+
+
 // ==========================================
 // BEGIN PLAY
 // ==========================================

@@ -19,6 +19,41 @@ AEnemySpawner::AEnemySpawner()
     PrimaryActorTick.bCanEverTick = false;
 }
 
+void AEnemySpawner::ApplySpawnBalance()
+{
+    AGameBalanceManager* Balance =
+        AGameBalanceManager::GetBalanceManager(this);
+
+    if (!IsValid(Balance))
+    {
+        UE_LOG(LogTemp, Warning,
+            TEXT("[EnemySpawner] BalanceManager not found. Using BP settings."));
+        return;
+    }
+
+    const FSpawnBalanceSettings& Settings =
+        Balance->Spawning;
+
+    MinimumSpawnDistance =
+        FMath::Max(0.0f, Settings.MinimumSpawnDistance);
+
+    SpawnSearchRadius =
+        FMath::Max(0.0f, Settings.SpawnSearchRadius);
+
+    MaxSpawnAttempts =
+        FMath::Max(1, Settings.MaxSpawnAttempts);
+
+    RetryInterval =
+        FMath::Max(0.01f, Settings.RetryInterval);
+
+    UE_LOG(LogTemp, Log,
+        TEXT("[EnemySpawner] Balance applied | Distance=%.1f Radius=%.1f Attempts=%d Retry=%.2f"),
+        MinimumSpawnDistance,
+        SpawnSearchRadius,
+        MaxSpawnAttempts,
+        RetryInterval);
+}
+
 // ==========================================
 // BEGIN PLAY
 // ==========================================
@@ -26,6 +61,8 @@ AEnemySpawner::AEnemySpawner()
 void AEnemySpawner::BeginPlay()
 {
     Super::BeginPlay();
+
+    ApplySpawnBalance();
 
     if (!IsValid(WaveManager))
     {

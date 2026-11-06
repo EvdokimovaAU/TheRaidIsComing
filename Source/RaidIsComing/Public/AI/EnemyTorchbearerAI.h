@@ -1,6 +1,6 @@
 
 #pragma once
-
+#include "AI/GameBalanceManager.h"
 #include "CoreMinimal.h"
 #include "AI/EnemyAI.h"
 #include "TimerManager.h"
@@ -17,7 +17,7 @@ class RAIDISCOMING_API AEnemyTorchbearerAI : public AEnemyAI
 
 public:
     AEnemyTorchbearerAI();
-
+    virtual void ApplyEnemyBalance() override;
     UPROPERTY(EditAnywhere, BlueprintReadOnly,
         Category = "Torchbearer|Movement",
         meta = (ClampMin = "0.05"))

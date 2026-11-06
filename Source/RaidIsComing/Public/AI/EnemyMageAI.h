@@ -1,6 +1,6 @@
 
 #pragma once
-
+#include "AI/GameBalanceManager.h"
 #include "CoreMinimal.h"
 #include "AI/EnemyAI.h"
 #include "EnemyMageAI.generated.h"
@@ -27,7 +27,7 @@ class RAIDISCOMING_API AEnemyMageAI : public AEnemyAI
 
 public:
     AEnemyMageAI();
-
+    virtual void ApplyEnemyBalance() override;
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AI|Magic")
     float AllyDetectionRadius = 800.f;
 

@@ -15,7 +15,6 @@ class RAIDISCOMING_API ARICBuilding : public AActor
     GENERATED_BODY()
 
 public:
-
     ARICBuilding();
 
     virtual float TakeDamage(
@@ -68,6 +67,5 @@ public:
     float CurrentHP = 0.0f;
 
 protected:
-
     virtual void BeginPlay() override;
 };

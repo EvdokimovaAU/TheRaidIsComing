@@ -1,7 +1,7 @@
 
 #include "AI/EnemySwordsmanAI.h"
 #include "AI/EnemySwordsmanAnimInstance.h"
-
+#include "AI/GameBalanceManager.h"
 #include "Construction/RICBuilding.h"
 #include "Construction/RICBuildTypes.h"
 
@@ -51,6 +51,45 @@ void AEnemySwordsmanAI::BeginPlay()
         true
     );
 }
+
+
+void AEnemySwordsmanAI::ApplyEnemyBalance()
+{
+    Super::ApplyEnemyBalance();
+
+    AGameBalanceManager* Balance =
+        AGameBalanceManager::GetBalanceManager(this);
+
+    if (!IsValid(Balance))
+    {
+        return;
+    }
+
+    const FSwordsmanBalanceSettings& Settings =
+        Balance->Swordsman;
+
+    WallDamage =
+        FMath::Max(0.0f, Settings.WallDamage);
+
+    WallAttackCooldown =
+        FMath::Max(0.01f, Settings.WallAttackCooldown);
+
+    WallAttackDistance =
+        FMath::Max(0.0f, Settings.WallAttackDistance);
+
+    WallDetectionDistance =
+        FMath::Max(0.0f, Settings.WallDetectionDistance);
+
+    WallApproachSpeed =
+        FMath::Max(0.0f, Settings.WallApproachSpeed);
+
+    UE_LOG(LogTemp, Log,
+        TEXT("[Swordsman] Balance applied | WallDamage=%.1f WallRange=%.1f ApproachSpeed=%.1f"),
+        WallDamage,
+        WallAttackDistance,
+        WallApproachSpeed);
+}
+
 
 void AEnemySwordsmanAI::Tick(float DeltaSeconds)
 {

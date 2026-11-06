@@ -1,8 +1,12 @@
 
 #include "AI/EnemyAI.h"
 
-#include "AIController.h"
+#include "AI/GameBalanceManager.h"
+#include "AI/EnemySwordsmanAI.h"
+#include "AI/EnemyMageAI.h"
+#include "AI/EnemyTorchbearerAI.h"
 
+#include "AIController.h"
 #include "NavigationSystem.h"
 #include "NavigationPath.h"
 #include "Navigation/PathFollowingComponent.h"
@@ -44,6 +48,9 @@ void AEnemyAI::BeginPlay()
 
     bKillRewardGranted = false;
 
+    // Apply level-specific balance before movement.
+    ApplyEnemyBalance();
+
     GetCharacterMovement()->MaxWalkSpeed = MovementSpeed;
 
     if (IsValid(Capitol))
@@ -63,6 +70,77 @@ void AEnemyAI::BeginPlay()
 
         TryStartMovement();
     }
+}
+
+// ==========================================
+// APPLY GAME BALANCE
+// ==========================================
+
+void AEnemyAI::ApplyEnemyBalance()
+{
+    AGameBalanceManager* Balance =
+        AGameBalanceManager::GetBalanceManager(this);
+
+    if (!IsValid(Balance))
+    {
+        UE_LOG(LogTemp, Verbose,
+            TEXT("[EnemyAI] %s: BalanceManager not found. Using BP settings."),
+            *GetName());
+
+        return;
+    }
+
+    const FEnemyBalanceSettings* Settings = nullptr;
+
+    // Check specific enemy classes.
+    if (IsA(AEnemySwordsmanAI::StaticClass()))
+    {
+        Settings = &Balance->Swordsman;
+    }
+    else if (IsA(AEnemyMageAI::StaticClass()))
+    {
+        Settings = &Balance->Mage;
+    }
+    else if (IsA(AEnemyTorchbearerAI::StaticClass()))
+    {
+        Settings = &Balance->Torchbearer;
+    }
+
+    if (!Settings)
+    {
+        UE_LOG(LogTemp, Verbose,
+            TEXT("[EnemyAI] %s: No balance profile for this enemy type."),
+            *GetName());
+
+        return;
+    }
+
+    ApplyCombatBalance(
+        Settings->MaxHealth,
+        Settings->AttackDamage,
+        Settings->AttackRange,
+        Settings->AttackCooldown
+    );
+
+    MovementSpeed =
+        FMath::Max(0.0f, Settings->MovementSpeed);
+
+    KillReward =
+        FMath::Max(0, Settings->KillReward);
+
+    if (UCharacterMovementComponent* Movement =
+        GetCharacterMovement())
+    {
+        Movement->MaxWalkSpeed = MovementSpeed;
+    }
+
+    UE_LOG(LogTemp, Log,
+        TEXT("[EnemyAI] %s balance: HP=%.1f Damage=%.1f Speed=%.1f Reward=%d"),
+        *GetName(),
+        MaxHP,
+        Damage,
+        MovementSpeed,
+        KillReward);
 }
 
 // ==========================================
@@ -108,11 +186,8 @@ void AEnemyAI::SetCapitol(AActor* NewCapitol)
 {
     if (!IsValid(NewCapitol) || NewCapitol == this)
     {
-        UE_LOG(
-            LogTemp,
-            Warning,
-            TEXT("[EnemyAI] Invalid Capitol")
-        );
+        UE_LOG(LogTemp, Warning,
+            TEXT("[EnemyAI] Invalid Capitol"));
 
         return;
     }
@@ -120,13 +195,10 @@ void AEnemyAI::SetCapitol(AActor* NewCapitol)
     Capitol = NewCapitol;
     CurrentTarget = NewCapitol;
 
-    UE_LOG(
-        LogTemp,
-        Log,
+    UE_LOG(LogTemp, Log,
         TEXT("[EnemyAI] %s: Capitol assigned: %s"),
         *GetName(),
-        *NewCapitol->GetName()
-    );
+        *NewCapitol->GetName());
 
     if (bAutoStartMovement && HasActorBegunPlay())
     {
@@ -149,12 +221,15 @@ AActor* AEnemyAI::GetCurrentTarget() const
 
 void AEnemyAI::ScheduleNavigationRetry()
 {
-    if (!IsAlive() || !IsValid(CurrentTarget) || !GetWorld())
+    if (!IsAlive() ||
+        !IsValid(CurrentTarget) ||
+        !GetWorld())
     {
         return;
     }
 
-    if (!GetWorldTimerManager().IsTimerActive(NavigationRetryTimer))
+    if (!GetWorldTimerManager().IsTimerActive(
+        NavigationRetryTimer))
     {
         GetWorldTimerManager().SetTimer(
             NavigationRetryTimer,
@@ -182,11 +257,8 @@ void AEnemyAI::MoveToTarget()
 
     if (!EnemyController)
     {
-        UE_LOG(
-            LogTemp,
-            Error,
-            TEXT("[EnemyAI] AIController not found")
-        );
+        UE_LOG(LogTemp, Error,
+            TEXT("[EnemyAI] AIController not found"));
 
         ScheduleNavigationRetry();
         return;
@@ -199,17 +271,15 @@ void AEnemyAI::MoveToTarget()
 
     if (!NavSys)
     {
-        UE_LOG(
-            LogTemp,
-            Error,
-            TEXT("[EnemyAI] NavigationSystem not found")
-        );
+        UE_LOG(LogTemp, Error,
+            TEXT("[EnemyAI] NavigationSystem not found"));
 
         ScheduleNavigationRetry();
         return;
     }
 
-    const FVector EnemyLocation = GetActorLocation();
+    const FVector EnemyLocation =
+        GetActorLocation();
 
     const FVector TargetLocation =
         CurrentTarget->GetActorLocation();
@@ -229,11 +299,8 @@ void AEnemyAI::MoveToTarget()
 
     if (!bEnemyOnNavMesh)
     {
-        UE_LOG(
-            LogTemp,
-            Error,
-            TEXT("[EnemyAI] Enemy is outside NavMesh")
-        );
+        UE_LOG(LogTemp, Error,
+            TEXT("[EnemyAI] Enemy is outside NavMesh"));
 
         ScheduleNavigationRetry();
         return;
@@ -258,12 +325,9 @@ void AEnemyAI::MoveToTarget()
 
     if (!bTargetOnNavMesh)
     {
-        UE_LOG(
-            LogTemp,
-            Error,
+        UE_LOG(LogTemp, Error,
             TEXT("[EnemyAI] No NavMesh near target: %s"),
-            *CurrentTarget->GetName()
-        );
+            *CurrentTarget->GetName());
 
         ScheduleNavigationRetry();
         return;
@@ -285,76 +349,51 @@ void AEnemyAI::MoveToTarget()
         !Path->IsValid() ||
         Path->IsPartial())
     {
-        UE_LOG(
-            LogTemp,
-            Warning,
-            TEXT("[EnemyAI] Complete path not found")
-        );
+        UE_LOG(LogTemp, Warning,
+            TEXT("[EnemyAI] Complete path not found"));
 
         ScheduleNavigationRetry();
         return;
     }
 
-    GetWorldTimerManager().ClearTimer(NavigationRetryTimer);
+    GetWorldTimerManager().ClearTimer(
+        NavigationRetryTimer
+    );
 
     // ======================================
     // DIAGNOSTICS
     // ======================================
 
-    UE_LOG(
-        LogTemp,
-        Warning,
-        TEXT("========== ENEMY MOVEMENT ==========")
-    );
+    UE_LOG(LogTemp, Warning,
+        TEXT("========== ENEMY MOVEMENT =========="));
 
-    UE_LOG(
-        LogTemp,
-        Warning,
+    UE_LOG(LogTemp, Warning,
         TEXT("[EnemyAI] Enemy: %s"),
-        *GetName()
-    );
+        *GetName());
 
-    UE_LOG(
-        LogTemp,
-        Warning,
+    UE_LOG(LogTemp, Warning,
         TEXT("[EnemyAI] Target: %s"),
-        *CurrentTarget->GetName()
-    );
+        *CurrentTarget->GetName());
 
-    UE_LOG(
-        LogTemp,
-        Warning,
+    UE_LOG(LogTemp, Warning,
         TEXT("[EnemyAI] Destination: %s"),
-        *TargetNavLocation.Location.ToString()
-    );
+        *TargetNavLocation.Location.ToString());
 
-    UE_LOG(
-        LogTemp,
-        Warning,
+    UE_LOG(LogTemp, Warning,
         TEXT("[EnemyAI] Movement speed: %.2f"),
-        GetCharacterMovement()->MaxWalkSpeed
-    );
+        GetCharacterMovement()->MaxWalkSpeed);
 
-    UE_LOG(
-        LogTemp,
-        Warning,
+    UE_LOG(LogTemp, Warning,
         TEXT("[EnemyAI] Enemy position: %s"),
-        *GetActorLocation().ToString()
-    );
+        *GetActorLocation().ToString());
 
-    UE_LOG(
-        LogTemp,
-        Warning,
+    UE_LOG(LogTemp, Warning,
         TEXT("[EnemyAI] Capitol position: %s"),
-        *CurrentTarget->GetActorLocation().ToString()
-    );
+        *CurrentTarget->GetActorLocation().ToString());
 
-    UE_LOG(
-        LogTemp,
-        Warning,
+    UE_LOG(LogTemp, Warning,
         TEXT("[EnemyAI] Navigation destination: %s"),
-        *TargetNavLocation.Location.ToString()
-    );
+        *TargetNavLocation.Location.ToString());
 
     // ======================================
     // START MOVEMENT
@@ -375,37 +414,25 @@ void AEnemyAI::MoveToTarget()
     switch (Result)
     {
     case EPathFollowingRequestResult::RequestSuccessful:
-        UE_LOG(
-            LogTemp,
-            Warning,
-            TEXT("[EnemyAI] Movement started")
-        );
+        UE_LOG(LogTemp, Warning,
+            TEXT("[EnemyAI] Movement started"));
         break;
 
     case EPathFollowingRequestResult::AlreadyAtGoal:
-        UE_LOG(
-            LogTemp,
-            Warning,
-            TEXT("[EnemyAI] Already at target")
-        );
+        UE_LOG(LogTemp, Warning,
+            TEXT("[EnemyAI] Already at target"));
         break;
 
     case EPathFollowingRequestResult::Failed:
-        UE_LOG(
-            LogTemp,
-            Error,
-            TEXT("[EnemyAI] Movement FAILED")
-        );
+        UE_LOG(LogTemp, Error,
+            TEXT("[EnemyAI] Movement FAILED"));
 
         ScheduleNavigationRetry();
         break;
     }
 
-    UE_LOG(
-        LogTemp,
-        Warning,
-        TEXT("====================================")
-    );
+    UE_LOG(LogTemp, Warning,
+        TEXT("===================================="));
 }
 
 // ==========================================
@@ -462,11 +489,9 @@ void AEnemyAI::GrantKillReward()
 
     if (!IsValid(PlayerController))
     {
-        UE_LOG(
-            LogTemp,
-            Warning,
-            TEXT("[EnemyAI] Kill reward failed: PlayerController not found")
-        );
+        UE_LOG(LogTemp, Warning,
+            TEXT("[EnemyAI] Kill reward failed: PlayerController not found"));
+
         return;
     }
 
@@ -475,26 +500,21 @@ void AEnemyAI::GrantKillReward()
 
     if (!IsValid(MoneyComponent))
     {
-        UE_LOG(
-            LogTemp,
-            Warning,
-            TEXT("[EnemyAI] Kill reward failed: MoneyComponent not found")
-        );
+        UE_LOG(LogTemp, Warning,
+            TEXT("[EnemyAI] Kill reward failed: MoneyComponent not found"));
+
         return;
     }
 
     const int32 AddedMoney =
         MoneyComponent->AddMoney(KillReward);
 
-    UE_LOG(
-        LogTemp,
-        Warning,
+    UE_LOG(LogTemp, Warning,
         TEXT("[EnemyAI] Enemy killed: %s | Reward: %d | Added: %d | Balance: %d"),
         *GetName(),
         KillReward,
         AddedMoney,
-        MoneyComponent->CurrentMoney
-    );
+        MoneyComponent->CurrentMoney);
 }
 
 // ==========================================
@@ -503,7 +523,9 @@ void AEnemyAI::GrantKillReward()
 
 void AEnemyAI::Die()
 {
-    GetWorldTimerManager().ClearTimer(NavigationRetryTimer);
+    GetWorldTimerManager().ClearTimer(
+        NavigationRetryTimer
+    );
 
     if (bIsDead)
     {
@@ -518,25 +540,24 @@ void AEnemyAI::Die()
 
     Super::Die();
 
-    UE_LOG(
-        LogTemp,
-        Warning,
+    UE_LOG(LogTemp, Warning,
         TEXT("[EnemyAI] Enemy died: %s"),
-        *GetName()
-    );
+        *GetName());
 
     GrantKillReward();
 
     OnEnemyDied.Broadcast(this);
 
-    if (UCapsuleComponent* Capsule = GetCapsuleComponent())
+    if (UCapsuleComponent* Capsule =
+        GetCapsuleComponent())
     {
         Capsule->SetCollisionEnabled(
             ECollisionEnabled::NoCollision
         );
     }
 
-    if (USkeletalMeshComponent* EnemyMesh = GetMesh())
+    if (USkeletalMeshComponent* EnemyMesh =
+        GetMesh())
     {
         EnemyMesh->SetCollisionEnabled(
             ECollisionEnabled::NoCollision
@@ -548,13 +569,10 @@ void AEnemyAI::Die()
 
     SetLifeSpan(ActualDestroyDelay);
 
-    UE_LOG(
-        LogTemp,
-        Warning,
+    UE_LOG(LogTemp, Warning,
         TEXT("[EnemyAI] %s scheduled for removal in %.2f seconds"),
         *GetName(),
-        ActualDestroyDelay
-    );
+        ActualDestroyDelay);
 }
 
 // ==========================================
@@ -562,11 +580,15 @@ void AEnemyAI::Die()
 // ==========================================
 
 void AEnemyAI::EndPlay(
-    const EEndPlayReason::Type EndPlayReason
-)
+    const EEndPlayReason::Type EndPlayReason)
 {
-    GetWorldTimerManager().ClearTimer(NavigationRetryTimer);
-    GetWorldTimerManager().ClearTimer(MovementStartTimer);
+    GetWorldTimerManager().ClearTimer(
+        NavigationRetryTimer
+    );
+
+    GetWorldTimerManager().ClearTimer(
+        MovementStartTimer
+    );
 
     Super::EndPlay(EndPlayReason);
 }

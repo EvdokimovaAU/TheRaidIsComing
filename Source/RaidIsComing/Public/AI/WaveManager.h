@@ -44,7 +44,6 @@ struct FWaveSpawnGroup
         meta = (ClampMin = "0"))
     int32 MageCount = 0;
 
-    // New enemy type: torchbearers
     UPROPERTY(EditAnywhere, BlueprintReadWrite,
         Category = "Spawn Group",
         meta = (ClampMin = "0"))
@@ -83,17 +82,15 @@ class RAIDISCOMING_API AWaveManager : public AActor
 public:
     AWaveManager();
 
-    // Current level phase
     UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly,
         Category = "Waves|Phase")
-    ERICLevelPhase LevelPhase = ERICLevelPhase::Preparation;
+    ERICLevelPhase LevelPhase =
+        ERICLevelPhase::Preparation;
 
-    // Wave configuration
     UPROPERTY(EditInstanceOnly, BlueprintReadOnly,
         Category = "Waves")
     TArray<FWaveData> Waves;
 
-    // Delay before next wave
     UPROPERTY(EditAnywhere, BlueprintReadWrite,
         Category = "Waves|Timing",
         meta = (ClampMin = "0.1"))
@@ -115,7 +112,6 @@ public:
         Category = "Waves")
     bool bSpawningFinished = false;
 
-    // Events
     UPROPERTY(BlueprintAssignable,
         Category = "Waves|Events")
     FOnWaveStarted OnWaveStarted;
@@ -128,7 +124,6 @@ public:
         Category = "Waves|Events")
     FOnAllWavesCompleted OnAllWavesCompleted;
 
-    // Manual start only during preparation
     UFUNCTION(BlueprintCallable, Category = "Waves")
     void StartNextWave();
 
@@ -157,6 +152,9 @@ protected:
 private:
     void StartNextWaveInternal();
     void CheckWaveCompletion();
+
+    // NEW: Grants gold after a completed wave.
+    void GrantWaveCompletionReward();
 
     FTimerHandle NextWaveTimerHandle;
 
