@@ -133,6 +133,9 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AI|Combat")
     float WallAttackDistance = 140.f;
 
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AI|Combat", meta = (ClampMin = "0.0", ClampMax = "100.0"))
+    float SoloWallAttackChance = 50.f;
+
     // ==========================================
     // PUBLIC METHODS
     // ==========================================
@@ -199,6 +202,9 @@ private:
     bool bAlliesNeedToAttack = false;
 
     bool bBarrierDestroyed = false;
+    bool bCombatWasWall = false;
+    bool bWaitingForPostCombatBarrier = false;
+    TWeakObjectPtr<ARICBuilding> PendingGroupTarget;
 
     bool bMovingToCapitol = false;
     bool bFollowingSwordsman = false;

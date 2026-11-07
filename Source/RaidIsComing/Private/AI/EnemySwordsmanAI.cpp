@@ -1126,13 +1126,52 @@ void AEnemySwordsmanAI::OnWallDestroyed()
 // CAPITOL
 // ==========================================
 
+
+
+static float GetSwordsmanCapitolSurfaceDistance(
+    const AActor* From,
+    const AActor* Building)
+{
+    if (!IsValid(From) || !IsValid(Building))
+    {
+        return TNumericLimits<float>::Max();
+    }
+
+    const FVector FromLocation = From->GetActorLocation();
+
+    // Получаем границы Капитолия.
+    FVector BoundsOrigin = FVector::ZeroVector;
+    FVector BoundsExtent = FVector::ZeroVector;
+
+    Building->GetActorBounds(
+        true,
+        BoundsOrigin,
+        BoundsExtent
+    );
+
+    // Формируем ограничивающий объём здания.
+    const FBox BuildingBounds(
+        BoundsOrigin - BoundsExtent,
+        BoundsOrigin + BoundsExtent
+    );
+
+    // Находим ближайшую точку границ к мечнику.
+    const FVector ClosestPoint =
+        BuildingBounds.GetClosestPointTo(FromLocation);
+
+    // Считаем горизонтальное расстояние.
+    return FVector::Dist2D(
+        FromLocation,
+        ClosestPoint
+    );
+}
+
+
+
 void AEnemySwordsmanAI::CheckCapitolDistance()
 {
-    if (!IsAlive() ||
-        IsWaitingForMage() ||
-        bAttackingCapitol ||
-        bAttackingWall ||
-        bAvoidingWall)
+    if (!IsAlive() || bAttackingCapitol ||
+        bAttackingWall || bAvoidingWall)
     {
         return;
     }
@@ -1146,10 +1185,13 @@ void AEnemySwordsmanAI::CheckCapitolDistance()
         return;
     }
 
-    if (FVector::Dist2D(
-        GetActorLocation(),
-        Building->GetActorLocation()) <= AttackRange)
+    if (GetSwordsmanCapitolSurfaceDistance(this, Building) <= AttackRange)
     {
+        // Capitol combat always overrides escort waiting.
+        if (IsWaitingForMage())
+        {
+            ResumeAfterMage(EscortMage.Get());
+        }
         StartCapitolAttack();
     }
 }
@@ -1159,8 +1201,12 @@ void AEnemySwordsmanAI::StartCapitolAttack()
     ARICBuilding* Building =
         Cast<ARICBuilding>(Capitol.Get());
 
-    if (IsWaitingForMage() ||
-        bAttackingCapitol ||
+    if (IsWaitingForMage())
+    {
+        ResumeAfterMage(EscortMage.Get());
+    }
+
+    if (bAttackingCapitol ||
         bAttackingWall ||
         !IsAlive() ||
         !IsValid(Building) ||
@@ -1196,9 +1242,7 @@ void AEnemySwordsmanAI::AttackCapitol()
         return;
     }
 
-    if (FVector::Dist2D(
-        GetActorLocation(),
-        Building->GetActorLocation()) > AttackRange)
+    if (GetSwordsmanCapitolSurfaceDistance(this, Building) > AttackRange * 1.35f)
     {
         StopCapitolAttack();
         MoveToTarget();

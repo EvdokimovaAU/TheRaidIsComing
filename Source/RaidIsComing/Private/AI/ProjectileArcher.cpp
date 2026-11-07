@@ -10,9 +10,11 @@
 #include "Engine/World.h"
 #include "EngineUtils.h"
 
-namespace
+namespace ProjectileArcherHelpers
 {
-    AEnemyBarrier* FindProtectingBarrier(
+    // Поиск активного барьера,
+    // внутри которого находится враг.
+    static AEnemyBarrier* FindArrowTargetBarrier(
         const AEnemyAI* Enemy)
     {
         if (!IsValid(Enemy) || !Enemy->GetWorld())
@@ -21,25 +23,36 @@ namespace
         }
 
         AEnemyBarrier* ClosestBarrier = nullptr;
-        float ClosestDistanceSq = TNumericLimits<float>::Max();
 
-        for (TActorIterator<AEnemyBarrier> It(Enemy->GetWorld());
-            It; ++It)
+        float ClosestDistanceSq =
+            TNumericLimits<float>::Max();
+
+        for (TActorIterator<AEnemyBarrier> It(
+            Enemy->GetWorld()); It; ++It)
         {
             AEnemyBarrier* Barrier = *It;
 
-            if (!IsValid(Barrier) ||
-                !Barrier->IsBarrierActive() ||
-                !Barrier->ContainsLocation(
-                    Enemy->GetActorLocation()))
+            if (!IsValid(Barrier))
             {
                 continue;
             }
 
-            const float DistanceSq = FVector::DistSquared(
-                Barrier->GetActorLocation(),
-                Enemy->GetActorLocation()
-            );
+            if (!Barrier->IsBarrierActive())
+            {
+                continue;
+            }
+
+            if (!Barrier->ContainsLocation(
+                Enemy->GetActorLocation()))
+            {
+                continue;
+            }
+
+            const float DistanceSq =
+                FVector::DistSquared(
+                    Barrier->GetActorLocation(),
+                    Enemy->GetActorLocation()
+                );
 
             if (DistanceSq < ClosestDistanceSq)
             {
@@ -51,11 +64,14 @@ namespace
         return ClosestBarrier;
     }
 
-    float GetBarrierDamageMultiplier(
+    // Получение множителя урона по барьеру.
+    static float GetArrowBarrierMultiplier(
         const UObject* WorldContext)
     {
         const AGameBalanceManager* Balance =
-            AGameBalanceManager::GetBalanceManager(WorldContext);
+            AGameBalanceManager::GetBalanceManager(
+                WorldContext
+            );
 
         if (!IsValid(Balance))
         {
@@ -78,13 +94,14 @@ AProjectileArcher::AProjectileArcher()
 {
     PrimaryActorTick.bCanEverTick = true;
 
-    SceneRoot = CreateDefaultSubobject<USceneComponent>(
-        TEXT("SceneRoot")
-    );
+    SceneRoot =
+        CreateDefaultSubobject<USceneComponent>(
+            TEXT("SceneRoot")
+        );
 
     RootComponent = SceneRoot;
 
-    // Projectile collisions are handled in code.
+    // Столкновения обрабатываются программно.
     SetActorEnableCollision(false);
 
     InitialLifeSpan = 10.0f;
@@ -109,7 +126,8 @@ void AProjectileArcher::InitializeProjectile(
     AAIBase* NewTarget,
     float NewDamage)
 {
-    if (!IsValid(NewTarget) || !NewTarget->IsAlive())
+    if (!IsValid(NewTarget) ||
+        !NewTarget->IsAlive())
     {
         Destroy();
         return;
@@ -117,7 +135,8 @@ void AProjectileArcher::InitializeProjectile(
 
     TargetActor = NewTarget;
 
-    ProjectileDamage = FMath::Max(0.0f, NewDamage);
+    ProjectileDamage =
+        FMath::Max(0.0f, NewDamage);
 
     StartLocation = GetActorLocation();
 
@@ -132,6 +151,7 @@ void AProjectileArcher::InitializeProjectile(
     );
 
     ElapsedTime = 0.0f;
+
     bInitialized = true;
 }
 
@@ -172,8 +192,10 @@ void AProjectileArcher::Tick(float DeltaTime)
         Alpha
     );
 
+    // Параболическая траектория.
     const float Height =
-        4.0f * ArcHeight * Alpha * (1.0f - Alpha);
+        4.0f * ArcHeight *
+        Alpha * (1.0f - Alpha);
 
     NewLocation.Z += Height;
 
@@ -187,12 +209,14 @@ void AProjectileArcher::Tick(float DeltaTime)
 
     SetActorLocation(NewLocation);
 
-    const float DistanceToTarget = FVector::Dist(
-        NewLocation,
-        EndLocation
-    );
+    const float DistanceToTarget =
+        FVector::Dist(
+            NewLocation,
+            EndLocation
+        );
 
-    if (DistanceToTarget <= HitRadius || Alpha >= 1.0f)
+    if (DistanceToTarget <= HitRadius ||
+        Alpha >= 1.0f)
     {
         HitTarget();
     }
@@ -206,23 +230,28 @@ void AProjectileArcher::HitTarget()
 {
     AAIBase* Target = TargetActor.Get();
 
-    if (!IsValid(Target) || !Target->IsAlive())
+    if (!IsValid(Target) ||
+        !Target->IsAlive())
     {
         Destroy();
         return;
     }
 
+    // Проверяем, является ли цель врагом.
     AEnemyAI* Enemy = Cast<AEnemyAI>(Target);
 
     if (IsValid(Enemy))
     {
         AEnemyBarrier* Barrier =
-            FindProtectingBarrier(Enemy);
+            ProjectileArcherHelpers::
+            FindArrowTargetBarrier(Enemy);
 
         if (IsValid(Barrier))
         {
+            // Получаем множитель урона.
             const float Multiplier =
-                GetBarrierDamageMultiplier(this);
+                ProjectileArcherHelpers::
+                GetArrowBarrierMultiplier(this);
 
             const float BarrierDamage =
                 ProjectileDamage * Multiplier;
@@ -230,6 +259,7 @@ void AProjectileArcher::HitTarget()
             const float HPBefore =
                 Barrier->CurrentBarrierHP;
 
+            // Наносим урон барьеру.
             Barrier->AbsorbDamage(BarrierDamage);
 
             UE_LOG(
@@ -242,14 +272,14 @@ void AProjectileArcher::HitTarget()
                 Barrier->CurrentBarrierHP
             );
 
-            // The barrier absorbed this projectile.
-            // Do not damage the protected enemy.
+            // Барьер поглотил стрелу.
+            // Враг не получает урон.
             Destroy();
             return;
         }
     }
 
-    // No active barrier: normal damage.
+    // Барьера нет: обычный урон врагу.
     Target->ReceiveDamage(ProjectileDamage);
 
     UE_LOG(

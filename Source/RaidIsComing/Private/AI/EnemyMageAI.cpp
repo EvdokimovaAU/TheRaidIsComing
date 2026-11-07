@@ -92,6 +92,9 @@ void AEnemyMageAI::BeginPlay()
             MageBrakingDeceleration;
         Movement->GroundFriction = 4.f;
         Movement->bRequestedMoveUseAcceleration = true;
+        Movement->bOrientRotationToMovement = true;
+        Movement->RotationRate = FRotator(0.f, 420.f, 0.f);
+        bUseControllerRotationYaw = false;
     }
 
     CurrentDesiredSpeed = NormalMovementSpeed;
@@ -139,9 +142,22 @@ void AEnemyMageAI::FindAlliesAhead()
             continue;
         }
 
-        if (FVector::DistSquared2D(
-            GetActorLocation(),
-            Ally->GetActorLocation()) <= RadiusSq)
+        const FVector MagePos = GetActorLocation();
+        const FVector AllyOffset = Ally->GetActorLocation() - MagePos;
+        if (AllyOffset.SizeSquared2D() > RadiusSq)
+        {
+            continue;
+        }
+
+        // Only recruit allies ahead in the Capitol corridor.
+        // Do not turn around or change the destination to recruit.
+        const FVector Forward = IsValid(Capitol)
+            ? (Capitol->GetActorLocation() - MagePos).GetSafeNormal2D()
+            : GetActorForwardVector().GetSafeNormal2D();
+        const float Along = FVector::DotProduct(AllyOffset, Forward);
+        const FVector Side = AllyOffset - Forward * Along;
+        if (Along >= -FollowDistance &&
+            Side.Size2D() <= FMath::Max(FollowDistance * 2.f, 220.f))
         {
             AlliesAhead.Add(Ally);
         }
@@ -219,6 +235,16 @@ void AEnemyMageAI::RefreshEscortGroup()
         }
     );
 
+    // Do not reserve another distant ally while one is waiting.
+    for (const auto& Weak : EscortGroup)
+    {
+        const AEnemySwordsmanAI* Ally = Weak.Get();
+        if (IsValid(Ally) && Ally->IsWaitingForMage())
+        {
+            return;
+        }
+    }
+
     for (AEnemySwordsmanAI* Ally : Candidates)
     {
         if (EscortGroup.Num() >= MaxProtectedSwordsmen)
@@ -229,6 +255,15 @@ void AEnemyMageAI::RefreshEscortGroup()
         if (Ally->TryAssignEscortMage(this))
         {
             EscortGroup.Add(Ally);
+            // Reserve immediately: the swordsman must not run away.
+            if (true)
+            {
+                Ally->WaitForMage(this);
+                if (Ally->IsWaitingForMage())
+                {
+                    WaitingSwordsmen.AddUnique(Ally);
+                }
+            }
 
             UE_LOG(LogTemp, Log,
                 TEXT("[Mage] Assigned ally: %s"),
@@ -676,9 +711,9 @@ void AEnemyMageAI::RemoveBarrierInternal(bool bDestroyed)
 
     if (GetWorld())
     {
-        NextBarrierTime =
-            GetWorld()->GetTimeSeconds() +
-            FMath::Max(0.5f, BarrierCooldown);
+        NextBarrierTime = bDestroyed
+            ? GetWorld()->GetTimeSeconds() + FMath::Max(0.f, BarrierCooldown)
+            : GetWorld()->GetTimeSeconds();
     }
 }
 
@@ -877,15 +912,77 @@ void AEnemyMageAI::StopCombat()
 
 void AEnemyMageAI::UpdateCombat()
 {
-    ARICBuilding* TargetBuilding = FindCombatTarget();
+    // The primary swordsman decides whether the escort fights a wall.
+    AEnemySwordsmanAI* Leader = FollowedSwordsman.Get();
+    const bool bHasLeader = IsValid(Leader) && Leader->IsAlive();
+    ARICBuilding* Desired = nullptr;
 
-    if (IsValid(TargetBuilding))
+    if (bHasLeader)
     {
-        StartCombat(TargetBuilding);
+        if (Leader->IsAttackingWall())
+        {
+            Desired = Leader->TargetWall;
+        }
+        else if (Leader->IsAttackingCapitol())
+        {
+            Desired = Cast<ARICBuilding>(Capitol.Get());
+        }
     }
-    else if (bAttacking)
+    else
     {
-        StopCombat();
+        Desired = FindCombatTarget();
+        // A solo mage attacks nearby walls with a configurable probability.
+        if (IsValid(Desired) && Desired != Capitol.Get() &&
+            PendingGroupTarget.Get() != Desired)
+        {
+            PendingGroupTarget = Desired;
+            if (FMath::FRandRange(0.f, 100.f) > SoloWallAttackChance)
+            {
+                Desired = nullptr;
+            }
+        }
+    }
+
+    if (!IsValid(Desired) || !Desired->IsAlive())
+    {
+        if (bAttacking)
+        {
+            const bool bWasWall = bCombatWasWall;
+            StopCombat();
+            if (bWasWall)
+            {
+                bWaitingForPostCombatBarrier = true;
+                StopMovement();
+                ResetMovementRequest();
+                StopNearbySwordsmen();
+            }
+        }
+        return;
+    }
+
+    // The swordsman has already initiated its attack/approach.
+    if (HasActiveBarrier())
+    {
+        RemoveBarrierInternal(false);
+    }
+    if (bCastingBarrier)
+    {
+        CancelBarrierCast();
+    }
+
+    const float RequiredRange = Desired == Capitol.Get()
+        ? AttackRange : WallAttackDistance;
+    if (FVector::Dist2D(GetActorLocation(), Desired->GetActorLocation()) > RequiredRange)
+    {
+        if (bAttacking) StopCombat();
+        RequestMoveToActor(Desired, FMath::Max(10.f, RequiredRange * 0.75f));
+        return;
+    }
+
+    if (!bAttacking || CombatTarget.Get() != Desired)
+    {
+        bCombatWasWall = Desired != Capitol.Get();
+        StartCombat(Desired);
     }
 }
 
@@ -1080,14 +1177,8 @@ void AEnemyMageAI::UpdateFollowSpeed(float DeltaTime)
                 Alpha
             );
 
-            MageTargetSpeed = FMath::Max(
-                MageTargetSpeed,
-                FMath::Lerp(
-                    GroupSpeed,
-                    MageMovementSpeed,
-                    Alpha
-                )
-            );
+            // Never accelerate the mage to catch a swordsman.
+            MageTargetSpeed = FMath::Min(MageTargetSpeed, GroupSpeed);
         }
         else if (Along < 0.f)
         {
@@ -1108,6 +1199,7 @@ void AEnemyMageAI::UpdateFollowSpeed(float DeltaTime)
         );
     }
 
+    MageTargetSpeed = FMath::Min(MageTargetSpeed, NormalMovementSpeed);
     MageMove->MaxWalkSpeed = FMath::FInterpConstantTo(
         MageMove->MaxWalkSpeed,
         MageTargetSpeed,
@@ -1125,7 +1217,8 @@ void AEnemyMageAI::UpdateMovement()
     if (!IsAlive() ||
         !IsValid(Capitol) ||
         bCastingBarrier ||
-        bAttacking)
+        bAttacking ||
+        bWaitingForPostCombatBarrier)
     {
         return;
     }
@@ -1144,10 +1237,24 @@ void AEnemyMageAI::UpdateMovement()
     bFollowingSwordsman = bEscort;
     bMovingToCapitol = !bEscort;
 
-    RequestMoveToActor(
-        Capitol.Get(),
-        AcceptanceRadius
-    );
+    // Never chase a reserved ally or stop the mage to wait for it.
+    // A reserved swordsman waits on the mage's existing route.
+    for (const auto& Weak : EscortGroup)
+    {
+        AEnemySwordsmanAI* Candidate = Weak.Get();
+        if (IsValid(Candidate) && Candidate->IsAlive() &&
+            Candidate->IsWaitingForMage() &&
+            (FVector::Dist2D(GetActorLocation(), Candidate->GetActorLocation()) <= FollowDistance ||
+                (IsValid(Capitol) &&
+                    FVector::DotProduct(
+                        Candidate->GetActorLocation() - GetActorLocation(),
+                        (Capitol->GetActorLocation() - GetActorLocation()).GetSafeNormal2D()) < 0.f)))
+        {
+            Candidate->ResumeAfterMage(this);
+        }
+    }
+
+    RequestMoveToActor(Capitol.Get(), AcceptanceRadius);
 }
 
 void AEnemyMageAI::MoveToTarget()
@@ -1169,35 +1276,62 @@ void AEnemyMageAI::UpdateBehavior()
     }
 
     UpdateBarrierState();
-
     FindAlliesAhead();
     RefreshEscortGroup();
     SelectSwordsman();
 
-    if (bCastingBarrier)
+    // An escort cannot deadlock the Capitol attack by keeping allies waiting.
+    if (IsValid(Capitol))
     {
+        const float Distance = FVector::Dist2D(
+            GetActorLocation(), Capitol->GetActorLocation());
+        if (Distance <= FMath::Max(AttackRange, FollowDistance))
+        {
+            ReleaseWaitingSwordsmen();
+        }
+    }
+
+    // Combat decisions take priority over barrier maintenance.
+    UpdateGroupCombatState();
+    UpdateCombat();
+    if (bAttacking || AreProtectedAlliesAttacking()) return;
+    if (bCastingBarrier) return;
+
+    bool bAssembled = true;
+    for (const auto& Weak : EscortGroup)
+    {
+        AEnemySwordsmanAI* Ally = Weak.Get();
+        if (!IsValid(Ally) || !Ally->IsAlive()) continue;
+        if (Ally->IsWaitingForMage() &&
+            FVector::Dist2D(GetActorLocation(), Ally->GetActorLocation()) > FollowDistance)
+        {
+            bAssembled = false;
+        }
+    }
+
+    // Joining an existing dome does not require a second cast.
+    if (bAssembled && !bWaitingForPostCombatBarrier)
+    {
+        ReleaseWaitingSwordsmen();
+    }
+
+    if (bWaitingForPostCombatBarrier)
+    {
+        if (CanCreateBarrier())
+        {
+            bWaitingForPostCombatBarrier = false;
+            Barrier();
+        }
         return;
     }
 
-    UpdateGroupCombatState();
-    UpdateCombat();
-
-    if (!bAttacking &&
-        !bCastingBarrier &&
-        CanCreateBarrier())
+    if (bAssembled && CanCreateBarrier())
     {
         Barrier();
     }
+    if (bCastingBarrier) return;
 
-    if (bCastingBarrier)
-    {
-        return;
-    }
-
-    const float Interval =
-        FMath::Max(0.05f, FollowUpdateInterval);
-
-    UpdateFollowSpeed(Interval);
+    UpdateFollowSpeed(FMath::Max(0.05f, FollowUpdateInterval));
     UpdateMovement();
 }
 
