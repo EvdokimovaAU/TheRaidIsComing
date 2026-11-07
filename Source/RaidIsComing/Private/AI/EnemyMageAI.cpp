@@ -7,6 +7,8 @@
 #include "Construction/RICBuildTypes.h"
 
 #include "AIController.h"
+#include "NavigationSystem.h"
+#include "NavigationPath.h"
 #include "Navigation/PathFollowingComponent.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
@@ -18,6 +20,26 @@
 #include "GameFramework/DamageType.h"
 #include "TimerManager.h"
 
+// Shared combat geometry: horizontal distance to the visible building bounds.
+// A small inset compensates for oversized decorative collision/bounds.
+static float GetMageBuildingSurfaceDistance(const AActor* From, const AActor* Building)
+{
+    if (!IsValid(From) || !IsValid(Building))
+        return TNumericLimits<float>::Max();
+
+    FVector Center = FVector::ZeroVector;
+    FVector Extent = FVector::ZeroVector;
+    Building->GetActorBounds(true, Center, Extent);
+    Extent.X = FMath::Max(0.f, Extent.X - 30.f);
+    Extent.Y = FMath::Max(0.f, Extent.Y - 30.f);
+    const FVector P = From->GetActorLocation();
+    const FVector Closest(
+        FMath::Clamp(P.X, Center.X - Extent.X, Center.X + Extent.X),
+        FMath::Clamp(P.Y, Center.Y - Extent.Y, Center.Y + Extent.Y),
+        P.Z);
+    return FVector::Dist2D(P, Closest);
+}
+
 // ==========================================
 // CONSTRUCTOR
 // ==========================================
@@ -28,6 +50,8 @@ AEnemyMageAI::AEnemyMageAI()
     bAutoStartMovement = false;
     MovementSpeed = 250.f;
     AcceptanceRadius = 100.f;
+    AttackRange = 135.f;
+    WallAttackDistance = 135.f;
 }
 
 // ==========================================
@@ -47,6 +71,10 @@ void AEnemyMageAI::ApplyEnemyBalance()
     }
 
     const FMageBalanceSettings& Settings = Balance->Mage;
+
+    // Tuned combat ranges (cm). Kept in code as requested.
+    AttackRange = 135.f;
+    WallAttackDistance = 135.f;
 
     BarrierHP = FMath::Max(1.f, Settings.BarrierHealth);
     BarrierCooldown = FMath::Max(0.f, Settings.BarrierCooldown);
@@ -748,9 +776,7 @@ ARICBuilding* AEnemyMageAI::FindCombatTarget() const
     if (IsValid(CapitolBuilding) &&
         CapitolBuilding->IsAlive())
     {
-        if (FVector::Dist2D(
-            GetActorLocation(),
-            CapitolBuilding->GetActorLocation()) <= AttackRange)
+        if (GetMageBuildingSurfaceDistance(this, CapitolBuilding) <= AttackRange)
         {
             return CapitolBuilding;
         }
@@ -770,9 +796,7 @@ ARICBuilding* AEnemyMageAI::FindCombatTarget() const
             continue;
         }
 
-        const float Distance = FVector::Dist2D(
-            GetActorLocation(),
-            Building->GetActorLocation());
+        const float Distance = GetMageBuildingSurfaceDistance(this, Building);
 
         if (Distance <= WallAttackDistance &&
             Distance < ClosestDistance)
@@ -849,9 +873,7 @@ void AEnemyMageAI::PerformAttack()
     const float AllowedDistance =
         bIsCapitol ? AttackRange : WallAttackDistance;
 
-    if (FVector::Dist2D(
-        GetActorLocation(),
-        Building->GetActorLocation()) > AllowedDistance)
+    if (GetMageBuildingSurfaceDistance(this, Building) > AllowedDistance)
     {
         StopCombat();
         return;
@@ -931,12 +953,55 @@ void AEnemyMageAI::UpdateCombat()
     else
     {
         Desired = FindCombatTarget();
+        // If navigation has no complete route, attack the nearest barrier
+        // regardless of the optional solo 50/50 choice.
+        bool bRouteBlocked = false;
+        if (IsValid(Capitol) && GetWorld())
+        {
+            UNavigationSystemV1* NavSys =
+                FNavigationSystem::GetCurrent<UNavigationSystemV1>(GetWorld());
+            if (NavSys)
+            {
+                FNavLocation NavGoal;
+                if (NavSys->ProjectPointToNavigation(
+                    Capitol->GetActorLocation(), NavGoal,
+                    FVector(250.f, 250.f, 300.f)))
+                {
+                    UNavigationPath* Path =
+                        NavSys->FindPathToLocationSynchronously(
+                            GetWorld(), GetActorLocation(),
+                            NavGoal.Location, this);
+                    bRouteBlocked = !IsValid(Path) ||
+                        !Path->IsValid() || Path->IsPartial();
+                }
+            }
+        }
+        if (bRouteBlocked)
+        {
+            ARICBuilding* NearestWall = nullptr;
+            float BestDistance = TNumericLimits<float>::Max();
+            for (TActorIterator<ARICBuilding> It(GetWorld()); It; ++It)
+            {
+                ARICBuilding* Wall = *It;
+                if (!IsValid(Wall) || !Wall->IsAlive() ||
+                    Wall->BuildingType != ERICBuildingType::Barrier) continue;
+                const float Distance = FVector::DistSquared2D(
+                    GetActorLocation(), Wall->GetActorLocation());
+                if (Distance < BestDistance)
+                {
+                    BestDistance = Distance;
+                    NearestWall = Wall;
+                }
+            }
+            if (IsValid(NearestWall)) Desired = NearestWall;
+        }
         // A solo mage attacks nearby walls with a configurable probability.
         if (IsValid(Desired) && Desired != Capitol.Get() &&
             PendingGroupTarget.Get() != Desired)
         {
             PendingGroupTarget = Desired;
-            if (FMath::FRandRange(0.f, 100.f) > SoloWallAttackChance)
+            if (!bRouteBlocked &&
+                FMath::FRandRange(0.f, 100.f) > SoloWallAttackChance)
             {
                 Desired = nullptr;
             }
@@ -972,7 +1037,7 @@ void AEnemyMageAI::UpdateCombat()
 
     const float RequiredRange = Desired == Capitol.Get()
         ? AttackRange : WallAttackDistance;
-    if (FVector::Dist2D(GetActorLocation(), Desired->GetActorLocation()) > RequiredRange)
+    if (GetMageBuildingSurfaceDistance(this, Desired) > RequiredRange)
     {
         if (bAttacking) StopCombat();
         RequestMoveToActor(Desired, FMath::Max(10.f, RequiredRange * 0.75f));
@@ -1254,6 +1319,14 @@ void AEnemyMageAI::UpdateMovement()
         }
     }
 
+    // The mage should not push into the Capitol mesh while waiting for
+    // the leader to initiate combat.
+    if (GetMageBuildingSurfaceDistance(this, Capitol.Get()) <= AttackRange)
+    {
+        StopMovement();
+        ResetMovementRequest();
+        return;
+    }
     RequestMoveToActor(Capitol.Get(), AcceptanceRadius);
 }
 
@@ -1283,8 +1356,7 @@ void AEnemyMageAI::UpdateBehavior()
     // An escort cannot deadlock the Capitol attack by keeping allies waiting.
     if (IsValid(Capitol))
     {
-        const float Distance = FVector::Dist2D(
-            GetActorLocation(), Capitol->GetActorLocation());
+        const float Distance = GetMageBuildingSurfaceDistance(this, Capitol.Get());
         if (Distance <= FMath::Max(AttackRange, FollowDistance))
         {
             ReleaseWaitingSwordsmen();

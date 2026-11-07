@@ -1,4 +1,4 @@
-
+п»ї
 #include "AI/EnemySwordsmanAI.h"
 #include "AI/EnemySwordsmanAnimInstance.h"
 #include "AI/GameBalanceManager.h"
@@ -8,6 +8,7 @@
 #include "AIController.h"
 #include "NavigationSystem.h"
 #include "NavigationPath.h"
+#include "EngineUtils.h"
 #include "Navigation/PathFollowingComponent.h"
 
 #include "Components/SkeletalMeshComponent.h"
@@ -27,6 +28,9 @@ AEnemySwordsmanAI::AEnemySwordsmanAI()
 {
     PrimaryActorTick.bCanEverTick = true;
     PrimaryActorTick.bStartWithTickEnabled = false;
+
+    AttackRange = 100.f;
+    WallAttackDistance = 105.f;
 }
 
 // ==========================================
@@ -102,6 +106,10 @@ void AEnemySwordsmanAI::ApplyEnemyBalance()
 
     WallAttackDistance =
         FMath::Max(0.f, Settings.WallAttackDistance);
+
+    // Tuned combat distances (cm).
+    AttackRange = 100.f;
+    WallAttackDistance = 105.f;
 
     WallDetectionDistance =
         FMath::Max(0.f, Settings.WallDetectionDistance);
@@ -569,6 +577,31 @@ void AEnemySwordsmanAI::CheckWallAhead()
         }
     }
 
+    // When the entire route is blocked, a wall may be outside the
+    // normal overlap radius. Search all surviving player barriers.
+    // Do not roll the 50/50 decision here: a blocked route must be opened.
+    if (!HasFreePathToCapitol())
+    {
+        AActor* NearestBlockingWall = nullptr;
+        float BestDistance = TNumericLimits<float>::Max();
+        for (TActorIterator<ARICBuilding> It(GetWorld()); It; ++It)
+        {
+            ARICBuilding* Wall = *It;
+            if (!IsValidWall(Wall)) continue;
+            const float Distance = GetDistanceToWall(Wall);
+            if (Distance < BestDistance)
+            {
+                BestDistance = Distance;
+                NearestBlockingWall = Wall;
+            }
+        }
+        if (IsValid(NearestBlockingWall))
+        {
+            StartWallAttack(NearestBlockingWall);
+            return;
+        }
+    }
+
     if (IsValid(ClosestWall))
     {
         OnObstacleDetected(ClosestWall);
@@ -986,8 +1019,11 @@ void AEnemySwordsmanAI::UpdateWallApproach(
         SavedWalkSpeed = Movement->MaxWalkSpeed;
     }
 
-    Movement->MaxWalkSpeed =
-        FMath::Max(WallApproachSpeed, 50.f);
+    // Do not sprint away from the escort mage when approaching a wall.
+    const float ApproachSpeed = HasEscortMage()
+        ? FMath::Min(WallApproachSpeed, 180.f)
+        : WallApproachSpeed;
+    Movement->MaxWalkSpeed = FMath::Max(ApproachSpeed, 50.f);
 
     AddMovementInput(Direction, 1.f);
 
@@ -1139,7 +1175,7 @@ static float GetSwordsmanCapitolSurfaceDistance(
 
     const FVector FromLocation = From->GetActorLocation();
 
-    // Получаем границы Капитолия.
+    // пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ.
     FVector BoundsOrigin = FVector::ZeroVector;
     FVector BoundsExtent = FVector::ZeroVector;
 
@@ -1149,17 +1185,21 @@ static float GetSwordsmanCapitolSurfaceDistance(
         BoundsExtent
     );
 
-    // Формируем ограничивающий объём здания.
+    // пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ.
+    // Ignore the outermost 30 cm of decorative bounds.
+    BoundsExtent.X = FMath::Max(0.f, BoundsExtent.X - 30.f);
+    BoundsExtent.Y = FMath::Max(0.f, BoundsExtent.Y - 30.f);
+
     const FBox BuildingBounds(
         BoundsOrigin - BoundsExtent,
         BoundsOrigin + BoundsExtent
     );
 
-    // Находим ближайшую точку границ к мечнику.
+    // пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ.
     const FVector ClosestPoint =
         BuildingBounds.GetClosestPointTo(FromLocation);
 
-    // Считаем горизонтальное расстояние.
+    // пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ.
     return FVector::Dist2D(
         FromLocation,
         ClosestPoint
