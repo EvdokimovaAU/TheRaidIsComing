@@ -8,6 +8,10 @@ public class RaidIsComing : ModuleRules
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
         PrivateDependencyModuleNames.Add("ProceduralMeshComponent");
+        if (Target.bBuildEditor)
+        {
+            PrivateDependencyModuleNames.Add("UnrealEd"); // PIE regression tests only.
+        }
 
         PublicDependencyModuleNames.AddRange(new string[] {
 			"Core",

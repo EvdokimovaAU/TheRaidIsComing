@@ -1,5 +1,7 @@
 
 #include "AI/EnemyMageAI.h"
+#include "EnemyCombatNavigation.h"
+#include "Components/CapsuleComponent.h"
 #include "AI/EnemyBarrier.h"
 #include "AI/EnemySwordsmanAI.h"
 #include "AI/GameBalanceManager.h"
@@ -24,20 +26,20 @@
 // A small inset compensates for oversized decorative collision/bounds.
 static float GetMageBuildingSurfaceDistance(const AActor* From, const AActor* Building)
 {
-    if (!IsValid(From) || !IsValid(Building))
-        return TNumericLimits<float>::Max();
+    return IsValid(From) ? EnemyCombatNavigation::SurfaceDistance(From->GetActorLocation(),
+        Cast<ARICBuilding>(Building)) : TNumericLimits<float>::Max();
+}
 
-    FVector Center = FVector::ZeroVector;
-    FVector Extent = FVector::ZeroVector;
-    Building->GetActorBounds(true, Center, Extent);
-    Extent.X = FMath::Max(0.f, Extent.X - 30.f);
-    Extent.Y = FMath::Max(0.f, Extent.Y - 30.f);
-    const FVector P = From->GetActorLocation();
-    const FVector Closest(
-        FMath::Clamp(P.X, Center.X - Extent.X, Center.X + Extent.X),
-        FMath::Clamp(P.Y, Center.Y - Extent.Y, Center.Y + Extent.Y),
-        P.Z);
-    return FVector::Dist2D(P, Closest);
+
+void AEnemyMageAI::OnCombatNavigationChanged(ANavigationData* NavData)
+{
+    if (NavData) ClearMarchPlan();
+    RejectedWalls.Empty();
+    FailedApproachWall.Reset();
+    FailedApproachAnchors.Empty();
+    RejectedFromPosition = GetActorLocation();
+    NextSoloDecisionTime = 0.f;
+    SoloAvoidedWall.Reset();
 }
 
 // ==========================================
@@ -46,7 +48,8 @@ static float GetMageBuildingSurfaceDistance(const AActor* From, const AActor* Bu
 
 AEnemyMageAI::AEnemyMageAI()
 {
-    PrimaryActorTick.bCanEverTick = false;
+    PrimaryActorTick.bCanEverTick = true;
+    PrimaryActorTick.bStartWithTickEnabled = false;
     bAutoStartMovement = false;
     MovementSpeed = 250.f;
     AcceptanceRadius = 100.f;
@@ -108,6 +111,9 @@ void AEnemyMageAI::ApplyEnemyBalance()
 void AEnemyMageAI::BeginPlay()
 {
     Super::BeginPlay();
+    RejectedFromPosition = GetActorLocation();
+    if (auto* Nav = FNavigationSystem::GetCurrent<UNavigationSystemV1>(GetWorld()))
+        Nav->OnNavigationGenerationFinishedDelegate.AddDynamic(this, &AEnemyMageAI::OnCombatNavigationChanged);
 
     MaxProtectedSwordsmen = FMath::Clamp(MaxProtectedSwordsmen, 1, 2);
 
@@ -140,6 +146,13 @@ void AEnemyMageAI::BeginPlay()
     UpdateMovement();
 }
 
+// Escort wall staging: move only to a complete-path NavMesh position.
+void AEnemyMageAI::Tick(float DeltaSeconds)
+{
+    Super::Tick(DeltaSeconds);
+    // Obstacle navigation belongs to BehaviorTimer, never to Tick.
+}
+
 // ==========================================
 // ALLY SEARCH
 // ==========================================
@@ -153,160 +166,51 @@ bool AEnemyMageAI::IsSwordsman(const AEnemyAI* Enemy) const
 void AEnemyMageAI::FindAlliesAhead()
 {
     AlliesAhead.Empty();
-
-    if (!GetWorld())
-    {
-        return;
-    }
-
-    // A distant reservation can freeze the escort while the mage is already
-    // fighting or standing at the Capitol. Recruit only within a local
-    // rendezvous corridor, not the entire detection sphere.
-    const float RadiusSq = FMath::Square(FMath::Min(AllyDetectionRadius, 260.f));
-    if (IsValid(Capitol) &&
-        GetMageBuildingSurfaceDistance(this, Capitol.Get()) <=
-        FMath::Max(AttackRange, FollowDistance) + 180.f)
-    {
-        return;
-    }
-
+    if (!GetWorld() || (IsValid(Capitol) &&
+        GetMageBuildingSurfaceDistance(this, Capitol.Get()) <= AttackRange + FollowDistance)) return;
     for (TActorIterator<AEnemySwordsmanAI> It(GetWorld()); It; ++It)
-    {
-        AEnemySwordsmanAI* Ally = *It;
-
-        if (!IsValid(Ally) || !Ally->IsAlive())
-        {
-            continue;
-        }
-
-        const FVector MagePos = GetActorLocation();
-        const FVector AllyOffset = Ally->GetActorLocation() - MagePos;
-        if (AllyOffset.SizeSquared2D() > RadiusSq)
-        {
-            continue;
-        }
-
-        // Only recruit allies ahead in the Capitol corridor.
-        // Do not turn around or change the destination to recruit.
-        const FVector Forward = IsValid(Capitol)
-            ? (Capitol->GetActorLocation() - MagePos).GetSafeNormal2D()
-            : GetActorForwardVector().GetSafeNormal2D();
-        const float Along = FVector::DotProduct(AllyOffset, Forward);
-        const FVector Side = AllyOffset - Forward * Along;
-        if (Along >= 0.f &&
-            Side.Size2D() <= FMath::Max(FollowDistance * 2.f, 220.f))
-        {
-            AlliesAhead.Add(Ally);
-        }
-    }
+        if (It->IsAlive() && !It->HasEscortMage() &&
+            FVector::Dist2D(GetActorLocation(), It->GetActorLocation()) <= AllyDetectionRadius)
+            AlliesAhead.Add(*It);
 }
 
 // ==========================================
 // ESCORT GROUP
 // ==========================================
 
+bool AEnemyMageAI::IsAllyOnRoute(const AEnemySwordsmanAI* Ally) const
+{
+    if (!IsValid(Ally) || EscortRoute.IsEmpty()) return false;
+    const float MageProgress = ProjectOntoEscortRoute(GetActorLocation(), 0.f, EscortRouteDistances.Last());
+    const float At = ProjectOntoEscortRoute(Ally->GetActorLocation(),
+        FMath::Max(0.f, MageProgress - FollowDistance), EscortRouteDistances.Last());
+    return At >= MageProgress - FollowDistance && At - MageProgress <= AllyDetectionRadius &&
+        FVector::Dist2D(Ally->GetActorLocation(), PointOnEscortRoute(At)) <= FollowDistance;
+}
+
 void AEnemyMageAI::RefreshEscortGroup()
 {
-    if (!GetWorld())
-    {
-        return;
-    }
-
     for (int32 Index = EscortGroup.Num() - 1; Index >= 0; --Index)
     {
-        AEnemySwordsmanAI* Ally = EscortGroup[Index].Get();
-
-        if (!IsValid(Ally) ||
-            !Ally->IsAlive() ||
-            !Ally->IsAssignedToMage(this))
-        {
-            EscortGroup.RemoveAt(Index);
-            continue;
-        }
-
-        const float Distance = FVector::Dist2D(
-            GetActorLocation(),
-            Ally->GetActorLocation());
-
-        if (Distance > AllyReleaseDistance &&
-            FollowedSwordsman.Get() != Ally)
-        {
-            Ally->ClearEscortSpeedLimit(this);
-            Ally->ReleaseEscortMage(this);
-            EscortGroup.RemoveAt(Index);
-        }
+        auto* Ally = EscortGroup[Index].Get();
+        if (IsValid(Ally) && Ally->IsAlive() && Ally->IsAssignedToMage(this)) continue;
+        JoinedEscort.Remove(EscortGroup[Index]);
+        MarchDestinations.Remove(EscortGroup[Index]);
+        EscortGroup.RemoveAt(Index);
+        EscortRoute.Empty();
     }
-
-    if (EscortGroup.Num() >= MaxProtectedSwordsmen ||
-        bCastingBarrier || bAttacking)
-    {
-        return;
-    }
-
-    TArray<AEnemySwordsmanAI*> Candidates;
-
+    if (bCastingBarrier || bAttacking || ObstaclePhase != EObstaclePhase::None) return;
+    BuildEscortRoute();
+    if (MeetingRecruit.IsValid() && !IsAllyOnRoute(MeetingRecruit.Get()))
+        CancelRecruitMeeting(TEXT("route changed"));
+    if (EscortGroup.Num() >= FMath::Min(2, MaxProtectedSwordsmen) || MeetingRecruit.IsValid()) return;
+    if (!JoinedEscort.IsEmpty() && !HasActiveBarrier()) return;
     for (AEnemyAI* Enemy : AlliesAhead)
     {
-        AEnemySwordsmanAI* Ally = Cast<AEnemySwordsmanAI>(Enemy);
-
-        if (!IsValid(Ally) ||
-            !Ally->IsAlive() ||
-            Ally->HasEscortMage() ||
-            Ally->IsAttackingWall() ||
-            Ally->IsAttackingCapitol())
-        {
-            continue;
-        }
-
-        Candidates.Add(Ally);
-    }
-
-    Candidates.Sort(
-        [this](const AEnemySwordsmanAI& A,
-            const AEnemySwordsmanAI& B)
-        {
-            return FVector::DistSquared2D(
-                GetActorLocation(), A.GetActorLocation()) <
-                FVector::DistSquared2D(
-                    GetActorLocation(), B.GetActorLocation());
-        }
-    );
-
-    // Do not reserve another distant ally while one is waiting.
-    for (const auto& Weak : EscortGroup)
-    {
-        const AEnemySwordsmanAI* Ally = Weak.Get();
-        if (IsValid(Ally) && Ally->IsWaitingForMage())
-        {
-            return;
-        }
-    }
-
-    for (AEnemySwordsmanAI* Ally : Candidates)
-    {
-        if (EscortGroup.Num() >= MaxProtectedSwordsmen)
-        {
-            break;
-        }
-
-        if (Ally->TryAssignEscortMage(this))
-        {
-            EscortGroup.Add(Ally);
-            if (HasActiveBarrier()) bRecruitBarrierRefreshPending = true;
-            // Reserve immediately: the swordsman must not run away.
-            if (true)
-            {
-                Ally->WaitForMage(this);
-                if (Ally->IsWaitingForMage())
-                {
-                    WaitingSwordsmen.AddUnique(Ally);
-                }
-            }
-
-            UE_LOG(LogTemp, Log,
-                TEXT("[Mage] Assigned ally: %s"),
-                *Ally->GetName());
-        }
+        auto* Ally = Cast<AEnemySwordsmanAI>(Enemy);
+        if (!IsValid(Ally) || !Ally->IsAlive() || Ally->HasEscortMage() ||
+            Ally->IsAttackingWall() || Ally->IsAttackingCapitol()) continue;
+        if (ReserveRecruit(Ally)) break;
     }
 }
 
@@ -316,7 +220,7 @@ void AEnemyMageAI::SelectSwordsman()
 
     if (IsValid(Current) &&
         Current->IsAlive() &&
-        Current->IsAssignedToMage(this))
+        Current->IsAssignedToMage(this) && JoinedEscort.Contains(Current))
     {
         return;
     }
@@ -333,7 +237,7 @@ void AEnemyMageAI::SelectSwordsman()
 
         if (!IsValid(Ally) ||
             !Ally->IsAlive() ||
-            !Ally->IsAssignedToMage(this))
+            !Ally->IsAssignedToMage(this) || !JoinedEscort.Contains(Weak))
         {
             continue;
         }
@@ -438,6 +342,10 @@ void AEnemyMageAI::ReleaseEscortGroup()
     }
 
     EscortGroup.Empty();
+    JoinedEscort.Empty();
+    bEscortMarchActive = false;
+    CancelRecruitMeeting(TEXT("mage released group"));
+    ClearMarchPlan();
     FollowedSwordsman.Reset();
     ResetMovementRequest();
 }
@@ -524,10 +432,7 @@ void AEnemyMageAI::UpdateGroupCombatState()
     if (IsValid(Leader) && Leader->IsAttackingWall())
         return;
 
-    if (bCastingBarrier)
-    {
-        CancelBarrierCast();
-    }
+    if (bCastingBarrier || ObstaclePhase != EObstaclePhase::None) return;
 
     if (HasActiveBarrier())
     {
@@ -550,8 +455,8 @@ bool AEnemyMageAI::CanCreateBarrier() const
     return IsAlive() &&
         !bCastingBarrier &&
         !bAttacking &&
-        !bAlliesNeedToAttack &&
-        !AreProtectedAlliesAttacking() &&
+        (ObstaclePhase == EObstaclePhase::Approaching ||
+            (!bAlliesNeedToAttack && !AreProtectedAlliesAttacking())) &&
         !HasActiveBarrier() &&
         BarrierClass != nullptr &&
         GetWorld() &&
@@ -566,6 +471,15 @@ void AEnemyMageAI::Barrier()
     }
 
     bCastingBarrier = true;
+    for (auto& Slot : ObstacleSlots)
+        if (auto* Member = Slot.Member.Get())
+        {
+            Member->StopMovement();
+            Member->GetCharacterMovement()->StopMovementImmediately();
+            Slot.bMoveIssued = false;
+            Slot.LastProgressTime = GetWorld()->GetTimeSeconds();
+            LastGroupProgressTime = Slot.LastProgressTime;
+        }
     bBarrierSpawnedThisCast = false;
     MageState = EMageState::CreatingBarrier;
 
@@ -703,7 +617,18 @@ void AEnemyMageAI::FinishBarrierCast()
 
     bCastingBarrier = false;
     bRecruitBarrierRefreshCasting = false;
+    if (HasActiveBarrier()) bSpawnGroupNeedsBarrier = false;
+    if (ObstaclePhase == EObstaclePhase::Restoring)
+    {
+        // A failed spawn is retried with its configured cooldown, while everyone waits.
+        if (!HasActiveBarrier() && BarrierClass) return;
+        ObstaclePhase = EObstaclePhase::None;
+        bWaitingForPostCombatBarrier = false;
+        bCombatWasWall = false;
+        UE_LOG(LogTemp, Log, TEXT("[Mage] Barrier restored; rebuilding group route"));
+    }
 
+    UpdateFollowSpeed(FMath::Max(0.05f, FollowUpdateInterval));
     ReleaseWaitingSwordsmen();
     ResetMovementRequest();
 
@@ -849,6 +774,7 @@ void AEnemyMageAI::StartCombat(ARICBuilding* TargetBuilding)
 
     CombatTarget = TargetBuilding;
     bAttacking = true;
+    UE_LOG(LogTemp, Log, TEXT("[Mage] Combat started: %s"), *GetNameSafe(TargetBuilding));
     MageState = EMageState::Attacking;
 
     StopMovement();
@@ -889,7 +815,7 @@ void AEnemyMageAI::PerformAttack()
     const float AllowedDistance =
         bIsCapitol ? AttackRange : WallAttackDistance;
 
-    if (GetMageBuildingSurfaceDistance(this, Building) > AllowedDistance)
+    if (!EnemyCombatNavigation::CanAttack(this, Building, AllowedDistance))
     {
         StopCombat();
         return;
@@ -948,177 +874,364 @@ void AEnemyMageAI::StopCombat()
     ResetMovementRequest();
 }
 
+bool AEnemyMageAI::OwnsEscortMovement() const
+{
+    return bEscortMarchActive || bCastingBarrier || bWaitingForPostCombatBarrier ||
+        bRecruitBarrierRefreshCasting || ObstaclePhase != EObstaclePhase::None;
+}
+
+bool AEnemyMageAI::CanSelectEscortObstacle(const AEnemySwordsmanAI* Ally) const
+{
+    return !bCastingBarrier && !bWaitingForPostCombatBarrier &&
+        ObstaclePhase == EObstaclePhase::None &&
+        (!FollowedSwordsman.IsValid() || FollowedSwordsman.Get() == Ally);
+}
+
 bool AEnemyMageAI::StageEscortAtWall(ARICBuilding* Wall)
 {
-    if (!IsValid(Wall) || !Wall->IsAlive()) return false;
+    if (ObstaclePhase == EObstaclePhase::None) BeginObstacleAction(Wall);
+    return ObstaclePhase == EObstaclePhase::Attacking;
+}
 
-    // The mage and every recruited swordsman must reach their individual
-    // attack range before the dome is removed and any damage begins.
-    bool bEveryoneReady =
-        GetMageBuildingSurfaceDistance(this, Wall) <= WallAttackDistance;
+bool AEnemyMageAI::BeginObstacleAction(ARICBuilding* Wall)
+{
+    if (!IsValid(Wall) || !Wall->IsAlive() || bCastingBarrier) return false;
+    const float Now = GetWorld()->GetTimeSeconds();
+    if (RejectedWalls.Contains(Wall)) return false;
+
+    TArray<FObstacleSlot> Planned;
+    TArray<FVector> Reserved;
+    FVector MageDestination;
     const float SafeRadius = HasActiveBarrier()
-        ? FMath::Max(90.f, ActiveBarrier->BarrierRadius * 0.75f)
-        : 160.f;
-
+        ? ActiveBarrier->BarrierRadius * FMath::Clamp(BarrierSafetyFraction, 0.35f, 0.8f)
+        : RegroupDistance;
+    float LargestRadius = GetCapsuleComponent()->GetScaledCapsuleRadius();
     for (const auto& Weak : EscortGroup)
+        if (auto* Ally = Weak.Get()) LargestRadius = FMath::Max(LargestRadius,
+            Ally->GetCapsuleComponent()->GetScaledCapsuleRadius());
+    if (FailedApproachWall.Get() != Wall)
     {
-        AEnemySwordsmanAI* Ally = Weak.Get();
-        if (!IsValid(Ally) || !Ally->IsAlive() ||
-            !Ally->IsAssignedToMage(this)) continue;
-
-        if (Ally->IsWaitingForMage())
-        {
-            bEveryoneReady = false;
-            continue;
-        }
-        if (!Ally->IsAttackingWall() || Ally->TargetWall != Wall)
-            Ally->StartWallAttack(Wall);
-
-        if (Ally->GetEscortWallDistance(Wall) > Ally->WallAttackDistance ||
-            FVector::Dist2D(Ally->GetActorLocation(), GetActorLocation()) > SafeRadius)
-            bEveryoneReady = false;
+        FailedApproachWall = Wall;
+        FailedApproachAnchors.Empty();
     }
-
-    if (!bEveryoneReady)
+    TArray<FVector> RejectedAnchors = FailedApproachAnchors;
+    bool bPlanFound = false;
+    // If the nearest mage slot leaves no space for a swordsman, try another
+    // complete-path anchor on the accessible side before rejecting this wall.
+    for (int32 Attempt = 0; Attempt < 8 && !bPlanFound; ++Attempt)
     {
-        RequestMoveToActor(Wall, FMath::Max(10.f, WallAttackDistance * 0.65f));
+        if (!EnemyCombatNavigation::FindApproach(this, Wall, WallAttackDistance,
+            MageDestination, RejectedAnchors, LargestRadius)) break;
+        RejectedAnchors.Add(MageDestination);
+        Planned.Empty(); Reserved.Empty();
+        Reserved.Add(MageDestination);
+        FObstacleSlot MageSlot;
+        MageSlot.Member = this;
+        MageSlot.Destination = MageDestination;
+        Planned.Add(MageSlot);
+        bPlanFound = true;
+        for (const auto& Weak : EscortGroup)
+        {
+            auto* Ally = Weak.Get();
+            if (!IsValid(Ally) || !Ally->IsAlive() || !JoinedEscort.Contains(Weak)) continue;
+            FVector Destination;
+            if (!EnemyCombatNavigation::FindApproach(Ally, Wall, Ally->WallAttackDistance,
+                Destination, Reserved, LargestRadius * 2.f + 16.f, &MageDestination, SafeRadius))
+            {
+                bPlanFound = false;
+                break;
+            }
+            FObstacleSlot Slot;
+            Slot.Member = Ally;
+            Slot.Destination = Destination;
+            Planned.Add(Slot);
+            Reserved.Add(Destination);
+        }
+    }
+    if (!bPlanFound)
+    {
+        RejectedWalls.Add(Wall, Now);
+        UE_LOG(LogTemp, Warning, TEXT("[Mage] Rejected %s: no separated full-path positions for group"),
+            *GetNameSafe(Wall));
         return false;
     }
-
+    for (int32 Index = EscortGroup.Num() - 1; Index >= 0; --Index)
+    {
+        if (JoinedEscort.Contains(EscortGroup[Index])) continue;
+        if (auto* ReservedAlly = EscortGroup[Index].Get()) ReservedAlly->ReleaseEscortMage(this);
+        EscortGroup.RemoveAt(Index);
+    }
+    bRecruitBarrierRefreshPending = false;
+    // Commit atomically only after all members have reachable positions.
+    bEscortMarchActive = false;
+    CancelRecruitMeeting(TEXT("group obstacle action started"));
+    EscortStagingWall = Wall;
+    ObstaclePhase = EObstaclePhase::Approaching;
+    ObstacleSlots = MoveTemp(Planned);
+    LastGroupProgressTime = Now;
+    StopCombat();
+    RestoreAllEscortSpeeds();
     StopMovement();
     ResetMovementRequest();
-    if (HasActiveBarrier()) RemoveBarrierInternal(false);
-    if (bCastingBarrier) CancelBarrierCast();
-
-    for (const auto& Weak : EscortGroup)
+    for (auto& Slot : ObstacleSlots)
     {
-        if (AEnemySwordsmanAI* Ally = Weak.Get())
-            Ally->AuthorizeEscortWallAttack(this, Wall);
+        auto* Member = Slot.Member.Get();
+        Slot.LastPosition = Member->GetActorLocation();
+        Slot.LastProgressTime = Now;
+        Member->StopMovement();
+        if (auto* Ally = Cast<AEnemySwordsmanAI>(Member))
+        {
+            Ally->StopWallAttack();
+            Ally->StopWallAvoidance();
+            Ally->StopCapitolAttack();
+            Ally->SavedWalkSpeed = FMath::Max(Ally->MovementSpeed,
+                Ally->GetCharacterMovement()->MaxWalkSpeed);
+            Ally->WaitingForMage.Reset();
+            Ally->TargetWall = Wall;
+            Ally->bAttackingWall = true;
+            Ally->bEscortWallAttackAuthorized = false;
+        }
+        UE_LOG(LogTemp, Log, TEXT("[Mage] Wall %s: complete path confirmed for %s to %s"),
+            *Wall->GetName(), *Member->GetName(), *Slot.Destination.ToString());
     }
     return true;
 }
 
+void AEnemyMageAI::ResetObstacleAction(const TCHAR* Reason, bool bRestoreBarrier)
+{
+    UE_LOG(LogTemp, Log, TEXT("[Mage] Reset wall %s: %s"), *GetNameSafe(EscortStagingWall.Get()), Reason);
+    StopCombat();
+    StopMovement();
+    ClearMarchPlan();
+    GetCharacterMovement()->MaxWalkSpeed = NormalMovementSpeed;
+    for (const auto& Weak : EscortGroup)
+        if (auto* Ally = Weak.Get())
+        {
+            Ally->StopMovement();
+            Ally->StopWallAttack();
+            Ally->StopCapitolAttack();
+        }
+    EscortStagingWall.Reset();
+    ObstacleSlots.Empty();
+    bAlliesNeedToAttack = false;
+    ObstaclePhase = bRestoreBarrier ? EObstaclePhase::Restoring : EObstaclePhase::None;
+    bWaitingForPostCombatBarrier = bRestoreBarrier;
+    if (bRestoreBarrier)
+    {
+        if (HasActiveBarrier()) RemoveBarrierInternal(false);
+        StopNearbySwordsmen();
+    }
+    ResetMovementRequest();
+}
+
+void AEnemyMageAI::UpdateObstacleAction()
+{
+    if (ObstaclePhase == EObstaclePhase::Restoring)
+    {
+        if (!bCastingBarrier && CanCreateBarrier()) Barrier();
+        // Missing barrier Blueprint must not freeze the entire escort.
+        if (!BarrierClass)
+        {
+            ObstaclePhase = EObstaclePhase::None;
+            bWaitingForPostCombatBarrier = false;
+            ReleaseWaitingSwordsmen();
+        }
+        return;
+    }
+    auto* Wall = EscortStagingWall.Get();
+    if (!IsValid(Wall) || !Wall->IsAlive())
+    {
+        ResetObstacleAction(TEXT("wall destroyed or removed"), true);
+        return;
+    }
+    if (ObstaclePhase == EObstaclePhase::Approaching && !HasActiveBarrier() && CanCreateBarrier())
+    {
+        Barrier();
+        return;
+    }
+    const float Now = GetWorld()->GetTimeSeconds();
+    ObstacleSlots.RemoveAll([](const FObstacleSlot& Slot)
+    {
+        return !Slot.Member.IsValid() || !Slot.Member->IsAlive();
+    });
+    bool bReady = true;
+    bool bNeedReplan = false;
+    for (auto& Slot : ObstacleSlots)
+        if (FVector::Dist2D(Slot.Member->GetActorLocation(), Slot.LastPosition) > 5.f)
+        {
+            Slot.LastPosition = Slot.Member->GetActorLocation();
+            LastGroupProgressTime = Now;
+        }
+    const float SafeRadius = HasActiveBarrier()
+        ? ActiveBarrier->BarrierRadius * FMath::Clamp(BarrierSafetyFraction, 0.35f, 0.8f)
+        : RegroupDistance;
+    for (auto& Slot : ObstacleSlots)
+    {
+        auto* Member = Slot.Member.Get();
+        auto* Ally = Cast<AEnemySwordsmanAI>(Member);
+        const float Range = Ally ? Ally->WallAttackDistance : WallAttackDistance;
+        // Readiness uses exactly the same range and collision test as damage.
+        const bool bAtSlot = FVector::Dist2D(Member->GetActorLocation(), Slot.Destination) <=
+            EnemyCombatNavigation::AcceptanceRadius + 2.f;
+        const bool bInRange = EnemyCombatNavigation::CanAttack(Member, Wall, Range);
+        const bool bInside = Member == this || FVector::Dist2D(Member->GetActorLocation(), GetActorLocation()) <= SafeRadius;
+        const bool bPositionReady = bAtSlot && bInRange;
+        const bool bArrived = bPositionReady && bInside;
+        if (bPositionReady && !Slot.bArrived)
+        {
+            UE_LOG(LogTemp, Log, TEXT("[Mage] %s reached wall attack slot"), *Member->GetName());
+            Member->StopMovement();
+        }
+        Slot.bArrived = bPositionReady;
+        bReady &= bArrived;
+        if (ObstaclePhase == EObstaclePhase::Attacking) continue;
+        if (bPositionReady) continue;
+        auto* AI = Cast<AAIController>(Member->GetController());
+        if (!AI) { bNeedReplan = true; continue; }
+        // Judge progress for the whole group: an ally yielding to the mage
+        // is not stuck while another member is still advancing.
+        if (Now - LastGroupProgressTime > 6.f) { bNeedReplan = true; continue; }
+        FVector Direction = (Slot.Destination - Member->GetActorLocation()).GetSafeNormal2D();
+        if (Slot.bMoveIssued && AI->GetPathFollowingComponent())
+            Direction = AI->GetPathFollowingComponent()->GetCurrentDirection().GetSafeNormal2D();
+        float Speed = FMath::Min(NormalMovementSpeed, Ally ? Ally->MovementSpeed : NormalMovementSpeed);
+        const float Interval = FMath::Max(0.05f, FollowUpdateInterval);
+        for (const auto& Other : ObstacleSlots)
+        {
+            if (Other.Member == Slot.Member || (Member != this && Other.Member.Get() != this)) continue;
+            const FVector Offset = Member->GetActorLocation() - Other.Member->GetActorLocation();
+            const float Gap = Offset.Size2D();
+            const float Away = FVector::DotProduct(Direction, Offset.GetSafeNormal2D());
+            if (Away > 0.f)
+                Speed = FMath::Min(Speed, FMath::Max(0.f, SafeRadius - Gap) / (Interval * Away));
+        }
+        // Limit speed without cancelling path following. The same MoveTo stays
+        // alive while a straggler catches up; no step/stop/reissue cycle.
+        Member->GetCharacterMovement()->MaxWalkSpeed = Speed;
+        if (Slot.bMoveIssued)
+        {
+            if (AI->GetMoveStatus() != EPathFollowingStatus::Moving) bNeedReplan = true;
+            continue;
+        }
+        if (!EnemyCombatNavigation::HasCompletePath(Member, Slot.Destination)) { bNeedReplan = true; continue; }
+        Slot.bMoveIssued = true;
+        const auto Result = AI->MoveToLocation(Slot.Destination, EnemyCombatNavigation::AcceptanceRadius,
+            false, true, false, false, nullptr, false);
+        bNeedReplan |= Result == EPathFollowingRequestResult::Failed;
+    }
+    if (bNeedReplan)
+    {
+        if (!ObstacleSlots.IsEmpty()) FailedApproachAnchors.Add(ObstacleSlots[0].Destination);
+        ResetObstacleAction(TEXT("approach failed, capsule blocked or navigation changed"), false);
+        if (FailedApproachAnchors.Num() < 3 && BeginObstacleAction(Wall)) return;
+        RejectedWalls.Add(Wall, Now);
+        return;
+    }
+    if (!bReady && ObstaclePhase == EObstaclePhase::Attacking)
+    {
+        // Revoke all damage before replanning; no member attacks alone.
+        ResetObstacleAction(TEXT("attack position lost"), false);
+        BeginObstacleAction(Wall);
+        return;
+    }
+    if (!bReady || ObstaclePhase == EObstaclePhase::Attacking) return;
+    UE_LOG(LogTemp, Log, TEXT("[Mage] Group ready at %s; removing barrier"), *Wall->GetName());
+    if (HasActiveBarrier()) RemoveBarrierInternal(false);
+    ObstaclePhase = EObstaclePhase::Attacking;
+    // Authorize every member before the first hit, which may destroy the wall.
+    for (const auto& Slot : ObstacleSlots)
+        if (auto* Ally = Cast<AEnemySwordsmanAI>(Slot.Member.Get())) Ally->bEscortWallAttackAuthorized = true;
+    // The leader lands the first hit.
+    if (auto* Leader = FollowedSwordsman.Get()) Leader->AuthorizeEscortWallAttack(this, Wall);
+    for (const auto& Slot : ObstacleSlots)
+        if (auto* Ally = Cast<AEnemySwordsmanAI>(Slot.Member.Get()))
+            if (Ally != FollowedSwordsman.Get() && IsValid(Wall) && Wall->IsAlive())
+                Ally->AuthorizeEscortWallAttack(this, Wall);
+    if (IsValid(Wall) && Wall->IsAlive())
+    {
+        bCombatWasWall = true;
+        StartCombat(Wall);
+    }
+    UE_LOG(LogTemp, Log, TEXT("[Mage] Group obstacle attack started"));
+}
+
 void AEnemyMageAI::UpdateCombat()
 {
-    // The primary swordsman decides whether the escort fights a wall.
-    AEnemySwordsmanAI* Leader = FollowedSwordsman.Get();
-    const bool bHasLeader = IsValid(Leader) && Leader->IsAlive();
-    ARICBuilding* Desired = nullptr;
-
-    if (bHasLeader)
+    if (OwnsEscortMovement() && !bEscortMarchActive) return;
+    bool bGroupAtCapitol = false;
+    for (const auto& Weak : EscortGroup)
+        bGroupAtCapitol |= Weak.IsValid() && Weak->IsAlive() &&
+            JoinedEscort.Contains(Weak) && Weak->IsAttackingCapitol();
+    if (bGroupAtCapitol)
+    {
+        bEscortMarchActive = false;
+        RestoreAllEscortSpeeds();
+        GetCharacterMovement()->MaxWalkSpeed = NormalMovementSpeed;
+        auto* Building = Cast<ARICBuilding>(Capitol.Get());
+        if (EnemyCombatNavigation::CanAttack(this, Building, AttackRange)) StartCombat(Building);
+        else
+        {
+            // An ally attacking is a command to join combat, not a reason to
+            // skip the mage's remaining approach on subsequent behavior updates.
+            RequestMoveToActor(Building, AttackRange);
+        }
+        return;
+    }
+    auto* Leader = FollowedSwordsman.Get();
+    if (IsValid(Leader) && Leader->IsAlive())
     {
         if (Leader->IsAttackingWall())
         {
-            Desired = Leader->TargetWall;
-        }
-        else if (Leader->IsAttackingCapitol())
-        {
-            Desired = Cast<ARICBuilding>(Capitol.Get());
-        }
-    }
-    else
-    {
-        Desired = FindCombatTarget();
-        // If navigation has no complete route, attack the nearest barrier
-        // regardless of the optional solo 50/50 choice.
-        bool bRouteBlocked = false;
-        if (IsValid(Capitol) && GetWorld())
-        {
-            UNavigationSystemV1* NavSys =
-                FNavigationSystem::GetCurrent<UNavigationSystemV1>(GetWorld());
-            if (NavSys)
+            auto* Wall = Leader->TargetWall.Get();
+            if (!BeginObstacleAction(Wall))
             {
-                FNavLocation NavGoal;
-                if (NavSys->ProjectPointToNavigation(
-                    Capitol->GetActorLocation(), NavGoal,
-                    FVector(250.f, 250.f, 300.f)))
-                {
-                    UNavigationPath* Path =
-                        NavSys->FindPathToLocationSynchronously(
-                            GetWorld(), GetActorLocation(),
-                            NavGoal.Location, this);
-                    bRouteBlocked = !IsValid(Path) ||
-                        !Path->IsValid() || Path->IsPartial();
-                }
+                Leader->StopMovement();
+                Leader->StopWallAttack();
+                Leader->RejectedWalls.Add(Wall, GetWorld()->GetTimeSeconds());
             }
+            return;
         }
-        if (bRouteBlocked)
+        if (Leader->IsAttackingCapitol() && EnemyCombatNavigation::CanAttack(this,
+            Cast<ARICBuilding>(Capitol.Get()), AttackRange))
         {
-            ARICBuilding* NearestWall = nullptr;
-            float BestDistance = TNumericLimits<float>::Max();
-            for (TActorIterator<ARICBuilding> It(GetWorld()); It; ++It)
-            {
-                ARICBuilding* Wall = *It;
-                if (!IsValid(Wall) || !Wall->IsAlive() ||
-                    Wall->BuildingType != ERICBuildingType::Barrier) continue;
-                const float Distance = FVector::DistSquared2D(
-                    GetActorLocation(), Wall->GetActorLocation());
-                if (Distance < BestDistance)
-                {
-                    BestDistance = Distance;
-                    NearestWall = Wall;
-                }
-            }
-            if (IsValid(NearestWall)) Desired = NearestWall;
-        }
-        // A solo mage attacks nearby walls with a configurable probability.
-        if (IsValid(Desired) && Desired != Capitol.Get() &&
-            PendingGroupTarget.Get() != Desired)
-        {
-            PendingGroupTarget = Desired;
-            if (!bRouteBlocked &&
-                FMath::FRandRange(0.f, 100.f) > SoloWallAttackChance)
-            {
-                Desired = nullptr;
-            }
-        }
-    }
-
-    if (!IsValid(Desired) || !Desired->IsAlive())
-    {
-        if (bAttacking)
-        {
-            const bool bWasWall = bCombatWasWall;
-            StopCombat();
-            if (bWasWall)
-            {
-                bWaitingForPostCombatBarrier = true;
-                StopMovement();
-                ResetMovementRequest();
-                StopNearbySwordsmen();
-            }
+            StartCombat(Cast<ARICBuilding>(Capitol.Get()));
         }
         return;
     }
-
-    if (bHasLeader && Desired != Capitol.Get() && IsValid(Desired))
+    auto* CapitolBuilding = Cast<ARICBuilding>(Capitol.Get());
+    if (!IsValid(CapitolBuilding) || !CapitolBuilding->IsAlive()) return;
+    if (EnemyCombatNavigation::CanAttack(this, CapitolBuilding, AttackRange))
     {
-        if (!StageEscortAtWall(Desired)) return;
-    }
-
-    // The swordsman has already initiated its attack/approach.
-    if (HasActiveBarrier())
-    {
-        RemoveBarrierInternal(false);
-    }
-    if (bCastingBarrier)
-    {
-        CancelBarrierCast();
-    }
-
-    const float RequiredRange = Desired == Capitol.Get()
-        ? AttackRange : WallAttackDistance;
-    if (GetMageBuildingSurfaceDistance(this, Desired) > RequiredRange)
-    {
-        if (bAttacking) StopCombat();
-        RequestMoveToActor(Desired, FMath::Max(10.f, RequiredRange * 0.75f));
+        StartCombat(CapitolBuilding);
         return;
     }
-
-    if (!bAttacking || CombatTarget.Get() != Desired)
+    const float Now = GetWorld()->GetTimeSeconds();
+    if (Now < NextSoloDecisionTime) return;
+    NextSoloDecisionTime = Now + 1.f;
+    FVector CapitolApproach;
+    const bool bBlocked = !EnemyCombatNavigation::FindApproach(this, CapitolBuilding, AttackRange, CapitolApproach);
+    TArray<ARICBuilding*> Walls;
+    for (TActorIterator<ARICBuilding> It(GetWorld()); It; ++It)
     {
-        bCombatWasWall = Desired != Capitol.Get();
-        StartCombat(Desired);
+        auto* Wall = *It;
+        if (!Wall->IsAlive() || Wall->BuildingType != ERICBuildingType::Barrier) continue;
+        if (RejectedWalls.Contains(Wall)) continue;
+        if (!bBlocked && (SoloAvoidedWall.Get() == Wall ||
+            GetMageBuildingSurfaceDistance(this, Wall) > WallDetectionRadius)) continue;
+        Walls.Add(Wall);
+    }
+    Walls.Sort([this](const ARICBuilding& A, const ARICBuilding& B)
+    {
+        return GetMageBuildingSurfaceDistance(this, &A) < GetMageBuildingSurfaceDistance(this, &B);
+    });
+    for (auto* Wall : Walls)
+    {
+        if (!bBlocked && FMath::FRandRange(0.f, 100.f) >= SoloWallAttackChance)
+        {
+            SoloAvoidedWall = Wall;
+            break;
+        }
+        if (BeginObstacleAction(Wall)) break;
     }
 }
 
@@ -1133,54 +1246,73 @@ void AEnemyMageAI::ResetMovementRequest()
     bMovingToCapitol = false;
 }
 
-void AEnemyMageAI::RequestMoveToActor(
-    AActor* MoveTarget,
-    float InAcceptanceRadius)
+void AEnemyMageAI::ClearMarchPlan()
 {
-    if (!IsValid(MoveTarget) || !IsAlive())
+    EscortRoute.Empty();
+    EscortRouteDistances.Empty();
+    MarchMoves.Empty();
+    bFinishingEscortMarch = false;
+    MarchBuilding.Reset();
+    MarchDestinations.Empty();
+}
+
+bool AEnemyMageAI::EnsureMarchAnchor()
+{
+    auto* Building = Cast<ARICBuilding>(Capitol.Get());
+    if (!IsValid(Building) || !Building->IsAlive()) return false;
+    if (MarchBuilding.Get() == Building) return true;
+    FVector Destination;
+    if (!EnemyCombatNavigation::FindApproach(this, Building, AttackRange, Destination)) return false;
+    MarchBuilding = Building;
+    MarchAnchor = Destination;
+    MarchDestinations.Empty();
+    return true;
+}
+
+bool AEnemyMageAI::FindEscortMarchDestination(AEnemySwordsmanAI* Ally, FVector& Destination)
+{
+    if (!IsValid(Ally) || !Ally->IsAssignedToMage(this) || !JoinedEscort.Contains(Ally) ||
+        !EnsureMarchAnchor()) return false;
+    if (const FVector* Existing = MarchDestinations.Find(Ally))
     {
-        return;
+        Destination = *Existing;
+        return true;
     }
+    TArray<FVector> Reserved{MarchAnchor};
+    for (const auto& Entry : MarchDestinations)
+        if (Entry.Key.IsValid() && Entry.Key->IsAlive()) Reserved.Add(Entry.Value);
+    const float Separation = GetCapsuleComponent()->GetScaledCapsuleRadius() +
+        Ally->GetCapsuleComponent()->GetScaledCapsuleRadius() + 12.f;
+    const float Radius = HasActiveBarrier() ? ActiveBarrier->BarrierRadius : RegroupDistance;
+    if (!EnemyCombatNavigation::FindApproach(Ally, MarchBuilding.Get(), Ally->AttackRange,
+        Destination, Reserved, Separation, &MarchAnchor,
+        Radius * FMath::Clamp(BarrierSafetyFraction, 0.35f, 0.8f))) return false;
+    MarchDestinations.Add(Ally, Destination);
+    return true;
+}
 
-    AAIController* MageController =
-        Cast<AAIController>(GetController());
-
-    if (!IsValid(MageController))
+void AEnemyMageAI::RequestMoveToActor(AActor* MoveTarget, float InAcceptanceRadius)
+{
+    if (!IsValid(MoveTarget) || !IsAlive() || OwnsEscortMovement()) return;
+    auto* AI = Cast<AAIController>(GetController());
+    if (!AI) return;
+    if (CurrentMoveTarget.Get() == MoveTarget && AI->GetMoveStatus() == EPathFollowingStatus::Moving) return;
+    const float Now = GetWorld()->GetTimeSeconds();
+    if (Now < NextWallNavRetryTime) return;
+    NextWallNavRetryTime = Now + 1.f;
+    FVector Destination;
+    auto* Building = Cast<ARICBuilding>(MoveTarget);
+    if (MoveTarget == Capitol.Get())
     {
-        return;
+        if (!EnsureMarchAnchor()) return;
+        Destination = MarchAnchor;
     }
-
-    const bool bSameTarget =
-        CurrentMoveTarget.Get() == MoveTarget;
-
-    const EPathFollowingStatus::Type Status =
-        MageController->GetMoveStatus();
-
-    if (bSameTarget &&
-        Status == EPathFollowingStatus::Moving)
-    {
-        return;
-    }
-
-    const float Distance = FVector::Dist2D(
-        GetActorLocation(),
-        MoveTarget->GetActorLocation()
-    );
-
-    if (bSameTarget && Distance <= InAcceptanceRadius)
-    {
-        return;
-    }
-
+    else if (!EnemyCombatNavigation::FindApproach(this, Building, WallAttackDistance, Destination)) return;
     CurrentMoveTarget = MoveTarget;
-
-    MageController->MoveToActor(
-        MoveTarget,
-        FMath::Max(10.f, InAcceptanceRadius),
-        true,
-        true,
-        true
-    );
+    const auto Result = AI->MoveToLocation(Destination, EnemyCombatNavigation::AcceptanceRadius,
+        false, true, false, false, nullptr, false);
+    if (Result == EPathFollowingRequestResult::RequestSuccessful)
+        UE_LOG(LogTemp, Log, TEXT("[Mage] Route rebuilt to %s: %s"), *GetNameSafe(MoveTarget), *Destination.ToString());
 }
 
 // ==========================================
@@ -1209,6 +1341,18 @@ void AEnemyMageAI::RestoreSwordsmanSpeed()
 
 void AEnemyMageAI::UpdateFollowSpeed(float DeltaTime)
 {
+    if (bEscortMarchActive)
+    {
+        // Cast completion can precede the next corridor update. Preserve the
+        // group's speed cap while releasing the waiting members, including
+        // pairs bound before BeginPlay initializes character movement.
+        float Limit = NormalMovementSpeed;
+        for (const auto& Weak : JoinedEscort)
+            if (Weak.IsValid() && Weak->IsAlive()) Limit = FMath::Min(Limit, Weak->MovementSpeed);
+        if (auto* Movement = GetCharacterMovement())
+            Movement->MaxWalkSpeed = FMath::Min(Movement->MaxWalkSpeed, Limit);
+        return;
+    }
     UCharacterMovementComponent* MageMove =
         GetCharacterMovement();
 
@@ -1237,7 +1381,7 @@ void AEnemyMageAI::UpdateFollowSpeed(float DeltaTime)
     {
         AEnemySwordsmanAI* Ally = Weak.Get();
 
-        if (!IsValid(Ally) || !Ally->IsAlive())
+        if (!IsValid(Ally) || !Ally->IsAlive() || !JoinedEscort.Contains(Weak))
         {
             continue;
         }
@@ -1248,7 +1392,7 @@ void AEnemyMageAI::UpdateFollowSpeed(float DeltaTime)
         );
     }
 
-    GroupSpeed = FMath::Max(80.f, GroupSpeed);
+    GroupSpeed = FMath::Max(0.f, GroupSpeed);
 
     const float Radius = HasActiveBarrier()
         ? ActiveBarrier->BarrierRadius
@@ -1265,11 +1409,14 @@ void AEnemyMageAI::UpdateFollowSpeed(float DeltaTime)
 
     const FVector MageLocation = GetActorLocation();
 
-    const FVector ToGoal = IsValid(Capitol)
+    FVector ToGoal = IsValid(Capitol)
         ? (Capitol->GetActorLocation() -
             MageLocation).GetSafeNormal2D()
         : GetActorForwardVector();
 
+    if (auto* AI = Cast<AAIController>(GetController()))
+        if (AI->GetMoveStatus() == EPathFollowingStatus::Moving && AI->GetPathFollowingComponent())
+            ToGoal = AI->GetPathFollowingComponent()->GetCurrentDirection().GetSafeNormal2D();
     float MageTargetSpeed = GroupSpeed;
 
     for (const TWeakObjectPtr<AEnemySwordsmanAI>& Weak : EscortGroup)
@@ -1281,7 +1428,7 @@ void AEnemyMageAI::UpdateFollowSpeed(float DeltaTime)
             continue;
         }
 
-        if (Ally->IsWaitingForMage())
+        if (!JoinedEscort.Contains(Weak) || Ally->IsWaitingForMage())
         {
             continue;
         }
@@ -1297,8 +1444,8 @@ void AEnemyMageAI::UpdateFollowSpeed(float DeltaTime)
         );
 
         const float Alpha = FMath::Clamp(
-            (Distance - SafeRadius * 0.55f) /
-            FMath::Max(1.f, SafeRadius * 0.35f),
+            (Distance - SafeRadius * 0.75f) /
+            FMath::Max(1.f, SafeRadius * 0.25f),
             0.f,
             1.f
         );
@@ -1337,7 +1484,7 @@ void AEnemyMageAI::UpdateFollowSpeed(float DeltaTime)
 
     MageTargetSpeed = FMath::Min(MageTargetSpeed, NormalMovementSpeed);
     MageMove->MaxWalkSpeed = FMath::FInterpConstantTo(
-        MageMove->MaxWalkSpeed,
+        FMath::Min(MageMove->MaxWalkSpeed, GroupSpeed),
         MageTargetSpeed,
         DeltaTime,
         FMath::Max(1.f, SpeedChangeRate)
@@ -1350,6 +1497,7 @@ void AEnemyMageAI::UpdateFollowSpeed(float DeltaTime)
 
 void AEnemyMageAI::UpdateMovement()
 {
+    if (OwnsEscortMovement()) return;
     if (!IsAlive() ||
         !IsValid(Capitol) ||
         bCastingBarrier ||
@@ -1373,24 +1521,6 @@ void AEnemyMageAI::UpdateMovement()
     bFollowingSwordsman = bEscort;
     bMovingToCapitol = !bEscort;
 
-    // Never chase a reserved ally or stop the mage to wait for it.
-    // A reserved swordsman waits on the mage's existing route.
-    for (const auto& Weak : EscortGroup)
-    {
-        AEnemySwordsmanAI* Candidate = Weak.Get();
-        if (IsValid(Candidate) && Candidate->IsAlive() &&
-            Candidate->IsWaitingForMage() &&
-            (FVector::Dist2D(GetActorLocation(), Candidate->GetActorLocation()) <= FollowDistance ||
-                (IsValid(Capitol) &&
-                    FVector::DotProduct(
-                        Candidate->GetActorLocation() - GetActorLocation(),
-                        (Capitol->GetActorLocation() - GetActorLocation()).GetSafeNormal2D()) < 0.f)))
-        {
-            if (!bRecruitBarrierRefreshPending && !bRecruitBarrierRefreshCasting)
-                Candidate->ResumeAfterMage(this);
-        }
-    }
-
     // The mage should not push into the Capitol mesh while waiting for
     // the leader to initiate combat.
     if (GetMageBuildingSurfaceDistance(this, Capitol.Get()) <= AttackRange)
@@ -1399,6 +1529,7 @@ void AEnemyMageAI::UpdateMovement()
         ResetMovementRequest();
         return;
     }
+    if (bEscort && Ally->IsAttackingWall()) return;
     RequestMoveToActor(Capitol.Get(), AcceptanceRadius);
 }
 
@@ -1420,60 +1551,26 @@ void AEnemyMageAI::UpdateBehavior()
         return;
     }
 
+    if (FVector::Dist2D(GetActorLocation(), RejectedFromPosition) > 100.f)
+        OnCombatNavigationChanged(nullptr);
     UpdateBarrierState();
+    if (bCastingBarrier) return;
+    if (bSpawnGroupNeedsBarrier)
+    {
+        if (CanCreateBarrier()) Barrier();
+        return;
+    }
+    if (ObstaclePhase != EObstaclePhase::None)
+    {
+        RefreshEscortGroup();
+        SelectSwordsman();
+        UpdateObstacleAction();
+        return;
+    }
     FindAlliesAhead();
     RefreshEscortGroup();
     SelectSwordsman();
 
-    // Refresh the dome once the newly reserved ally is physically inside it.
-    // Everyone waits for the new cast; no one can run ahead during casting.
-    if (bRecruitBarrierRefreshPending && !bCastingBarrier &&
-        !AreProtectedAlliesAttacking() && !bAttacking)
-    {
-        bool bNewAllyInRange = false;
-        const float JoinRadius = HasActiveBarrier()
-            ? FMath::Max(90.f, ActiveBarrier->BarrierRadius * 0.70f)
-            : FollowDistance;
-        for (const auto& Weak : EscortGroup)
-        {
-            AEnemySwordsmanAI* Ally = Weak.Get();
-            if (IsValid(Ally) && Ally->IsAlive() && Ally->IsWaitingForMage() &&
-                FVector::Dist2D(GetActorLocation(), Ally->GetActorLocation()) <= JoinRadius)
-            {
-                bNewAllyInRange = true;
-                break;
-            }
-        }
-        if (bNewAllyInRange)
-        {
-            bRecruitBarrierRefreshPending = false;
-            bRecruitBarrierRefreshCasting = true;
-            if (HasActiveBarrier()) RemoveBarrierInternal(false);
-            StopMovement();
-            ResetMovementRequest();
-            StopNearbySwordsmen();
-        }
-    }
-    // If the mage has reached the Capitol while a recruit is still waiting
-    // elsewhere, the rendezvous is no longer possible. Cancel the reservation.
-    if (bRecruitBarrierRefreshPending && IsValid(Capitol) &&
-        GetMageBuildingSurfaceDistance(this, Capitol.Get()) <=
-        FMath::Max(AttackRange, FollowDistance) + 80.f)
-    {
-        for (int32 Index = EscortGroup.Num() - 1; Index >= 0; --Index)
-        {
-            AEnemySwordsmanAI* Ally = EscortGroup[Index].Get();
-            if (IsValid(Ally) && Ally->IsWaitingForMage())
-            {
-                Ally->ClearEscortSpeedLimit(this);
-                Ally->ReleaseEscortMage(this);
-                EscortGroup.RemoveAt(Index);
-            }
-        }
-        WaitingSwordsmen.Empty();
-        bRecruitBarrierRefreshPending = false;
-        SelectSwordsman();
-    }
     if (bRecruitBarrierRefreshCasting)
     {
         StopMovement();
@@ -1497,7 +1594,9 @@ void AEnemyMageAI::UpdateBehavior()
     // Combat decisions take priority over barrier maintenance.
     UpdateGroupCombatState();
     UpdateCombat();
+    if (ObstaclePhase != EObstaclePhase::None) return;
     if (bAttacking || AreProtectedAlliesAttacking()) return;
+    if (MeetingRecruit.IsValid() && UpdateRecruitMeeting()) return;
     if (bCastingBarrier) return;
 
     bool bAssembled = true;
@@ -1505,6 +1604,7 @@ void AEnemyMageAI::UpdateBehavior()
     {
         AEnemySwordsmanAI* Ally = Weak.Get();
         if (!IsValid(Ally) || !Ally->IsAlive()) continue;
+        if (!JoinedEscort.Contains(Weak)) continue;
         if (Ally->IsWaitingForMage() &&
             FVector::Dist2D(GetActorLocation(), Ally->GetActorLocation()) > FollowDistance)
         {
@@ -1512,8 +1612,14 @@ void AEnemyMageAI::UpdateBehavior()
         }
     }
 
+    if (bAssembled && !HasActiveBarrier() && CanCreateBarrier())
+    {
+        Barrier();
+        return;
+    }
     // Reserved allies stay still until the replacement dome has been cast.
-    if (bAssembled && !bWaitingForPostCombatBarrier && !bRecruitBarrierRefreshPending)
+    if (bAssembled && !bWaitingForPostCombatBarrier && !bRecruitBarrierRefreshPending &&
+        (HasActiveBarrier() || !BarrierClass || bBarrierDestroyed))
     {
         ReleaseWaitingSwordsmen();
     }
@@ -1534,8 +1640,11 @@ void AEnemyMageAI::UpdateBehavior()
     }
     if (bCastingBarrier) return;
 
-    UpdateFollowSpeed(FMath::Max(0.05f, FollowUpdateInterval));
-    UpdateMovement();
+    if (!EscortStagingWall.IsValid())
+    {
+        if (!JoinedEscort.IsEmpty()) UpdateEscortMarch();
+        else UpdateMovement();
+    }
 }
 
 // ==========================================

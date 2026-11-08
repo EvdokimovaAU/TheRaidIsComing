@@ -9,6 +9,7 @@ class AEnemyBarrier;
 class AEnemySwordsmanAI;
 class ARICBuilding;
 class UAnimMontage;
+class ANavigationData;
 
 UENUM(BlueprintType)
 enum class EMageState : uint8
@@ -158,15 +159,59 @@ public:
     UFUNCTION(BlueprintPure, Category = "AI|Magic")
     bool HasActiveBarrier() const;
 
+    bool OwnsEscortMovement() const;
+    bool CanSelectEscortObstacle(const AEnemySwordsmanAI* Ally) const;
+    bool FindEscortMarchDestination(AEnemySwordsmanAI* Ally, FVector& Destination);
+    bool BindSpawnCompanion(AEnemySwordsmanAI* Ally);
+    bool IsEscortMarching() const { return bEscortMarchActive; }
+
 protected:
 
     virtual void BeginPlay() override;
+    virtual void Tick(float DeltaSeconds) override;
 
     virtual void EndPlay(
         const EEndPlayReason::Type EndPlayReason
     ) override;
 
 private:
+
+    friend class FEnemyEscortObstacleTest;
+    friend class FEnemyEscortMarchTest;
+    friend class FEnemyLevelOneTest;
+    friend class FObserveLevelOneCommand;
+    UFUNCTION()
+    void OnCombatNavigationChanged(ANavigationData* NavData);
+    FVector RejectedFromPosition = FVector::ZeroVector;
+    TWeakObjectPtr<ARICBuilding> MarchBuilding;
+    FVector MarchAnchor = FVector::ZeroVector;
+    TMap<TWeakObjectPtr<AEnemySwordsmanAI>, FVector> MarchDestinations;
+    bool EnsureMarchAnchor();
+    void ClearMarchPlan();
+    bool BuildEscortRoute();
+    void UpdateEscortMarch();
+    bool UpdateRecruitMeeting();
+    bool ReserveRecruit(AEnemySwordsmanAI* Ally);
+    void CancelRecruitMeeting(const TCHAR* Reason);
+    FVector PointOnEscortRoute(float Progress) const;
+    float ProjectOntoEscortRoute(const FVector& Position, float MinProgress, float MaxProgress) const;
+    void IssueEscortMove(AEnemyAI* Member, const FVector& Goal, float Speed);
+    struct FMarchMove
+    {
+        FVector Goal = FVector::ZeroVector;
+        float Progress = 0.f;
+        bool bIssued = false;
+    };
+    TMap<TWeakObjectPtr<AEnemyAI>, FMarchMove> MarchMoves;
+    TArray<FVector> EscortRoute;
+    TArray<float> EscortRouteDistances;
+    bool bEscortMarchActive = false;
+    bool bSpawnGroupNeedsBarrier = false;
+    bool bFinishingEscortMarch = false;
+    TWeakObjectPtr<AEnemySwordsmanAI> MeetingRecruit;
+    TMap<TWeakObjectPtr<AEnemyAI>, FVector> MeetingSlots;
+    float MeetingProgress = 0.f;
+    bool bApproachingMeeting = false;
 
     // ==========================================
     // TIMERS
@@ -275,6 +320,31 @@ private:
     void UpdateGroupCombatState();
 
     bool StageEscortAtWall(ARICBuilding* Wall);
+    bool BeginObstacleAction(ARICBuilding* Wall);
+    void UpdateObstacleAction();
+    void ResetObstacleAction(const TCHAR* Reason, bool bRestoreBarrier);
+    bool IsAllyOnRoute(const AEnemySwordsmanAI* Ally) const;
+    enum class EObstaclePhase : uint8 { None, Approaching, Attacking, Restoring };
+    EObstaclePhase ObstaclePhase = EObstaclePhase::None;
+    struct FObstacleSlot
+    {
+        TWeakObjectPtr<AEnemyAI> Member;
+        FVector Destination = FVector::ZeroVector;
+        FVector LastPosition = FVector::ZeroVector;
+        float LastProgressTime = 0.f;
+        bool bMoveIssued = false;
+        bool bArrived = false;
+    };
+    TArray<FObstacleSlot> ObstacleSlots;
+    float LastGroupProgressTime = 0.f;
+    TWeakObjectPtr<ARICBuilding> FailedApproachWall;
+    TArray<FVector> FailedApproachAnchors;
+    TSet<TWeakObjectPtr<AEnemySwordsmanAI>> JoinedEscort;
+    TMap<TWeakObjectPtr<ARICBuilding>, float> RejectedWalls;
+    TWeakObjectPtr<ARICBuilding> SoloAvoidedWall;
+    float NextSoloDecisionTime = 0.f;
+    TWeakObjectPtr<ARICBuilding> EscortStagingWall;
+    float NextWallNavRetryTime = 0.f;
 
     // ==========================================
     // COMBAT
