@@ -128,37 +128,28 @@ bool ADayNightManager::IsNight() const
     // initial night state instead of the not-yet-initialized bool.
     return bLightingInitialized ? bIsNight : GetInitialDarkness() >= 1.0f;
 }
-
 float ADayNightManager::CalculateTargetDarkness() const
 {
-    const float Initial = GetInitialDarkness();
     if (LightingMode == ERICLightingMode::PermanentNight)
     {
         return 1.0f;
     }
+
+    const float Initial = GetInitialDarkness();
+
     if (TotalWaves <= 0 || CurrentWave <= 0)
     {
         return Initial;
     }
 
-    const float Final = FMath::IsFinite(FinalDarkness)
-        ? FMath::Clamp(FinalDarkness, 0.0f, 1.0f) : 1.0f;
+    const int32 DayWaves = TotalWaves / 3;
 
-    // A single-wave level transitions to its final lighting when wave 1 starts.
-    if (TotalWaves == 1)
+    if (CurrentWave <= DayWaves)
     {
-        return Final;
-    }
-    if (CurrentWave >= TotalWaves)
-    {
-        return Final;
+        return Initial;
     }
 
-    // For three waves: 0, 0.5, 1. Before wave 1: initial lighting.
-    const float Progress = FMath::Clamp(
-        static_cast<float>(CurrentWave - 1) / static_cast<float>(TotalWaves - 1),
-        0.0f, 1.0f);
-    return FMath::Lerp(Initial, Final, Progress);
+    return FMath::Clamp(FinalDarkness, 0.0f, 1.0f);
 }
 
 void ADayNightManager::UpdateWaveState(int32 NewCurrentWave, int32 NewTotalWaves)
