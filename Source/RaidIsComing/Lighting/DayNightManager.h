@@ -115,6 +115,13 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "DayNight|Sky", meta = (ClampMin = "0"))
     float NightSkyIntensity = 0.03f;
 
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Level")
+    int32 StartDarkeningWave = 3;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Level")
+    int32 FullNightWave = 6;
+
 protected:
     virtual void BeginPlay() override;
     virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
