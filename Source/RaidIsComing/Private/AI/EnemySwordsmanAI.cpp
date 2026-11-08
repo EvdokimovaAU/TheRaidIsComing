@@ -1,5 +1,7 @@
 ﻿
 #include "AI/EnemySwordsmanAI.h"
+#include "AI/EnemyMageAI.h"
+#include "EnemyCombatNavigation.h"
 #include "AI/EnemySwordsmanAnimInstance.h"
 #include "AI/GameBalanceManager.h"
 #include "Construction/RICBuilding.h"
@@ -8,6 +10,7 @@
 #include "AIController.h"
 #include "NavigationSystem.h"
 #include "NavigationPath.h"
+#include "Components/StaticMeshComponent.h"
 #include "EngineUtils.h"
 #include "Navigation/PathFollowingComponent.h"
 
@@ -19,6 +22,14 @@
 #include "Engine/DamageEvents.h"
 #include "GameFramework/DamageType.h"
 #include "TimerManager.h"
+
+
+void AEnemySwordsmanAI::OnCombatNavigationChanged(ANavigationData* NavData)
+{
+    RejectedWalls.Empty();
+    RejectedFromPosition = GetActorLocation();
+    NextCapitolRouteCheck = 0.f;
+}
 
 // ==========================================
 // CONSTRUCTOR
@@ -40,6 +51,9 @@ AEnemySwordsmanAI::AEnemySwordsmanAI()
 void AEnemySwordsmanAI::BeginPlay()
 {
     Super::BeginPlay();
+    RejectedFromPosition = GetActorLocation();
+    if (auto* Nav = FNavigationSystem::GetCurrent<UNavigationSystemV1>(GetWorld()))
+        Nav->OnNavigationGenerationFinishedDelegate.AddDynamic(this, &AEnemySwordsmanAI::OnCombatNavigationChanged);
 
     SetActorTickEnabled(false);
 
@@ -125,11 +139,6 @@ void AEnemySwordsmanAI::ApplyEnemyBalance()
 void AEnemySwordsmanAI::Tick(float DeltaSeconds)
 {
     Super::Tick(DeltaSeconds);
-
-    if (bApproachingWall && !IsWaitingForMage())
-    {
-        UpdateWallApproach(DeltaSeconds);
-    }
 }
 
 // ==========================================
@@ -170,11 +179,12 @@ void AEnemySwordsmanAI::ReleaseEscortMage(AActor* Mage)
         return;
     }
 
-    bEscortWallAttackAuthorized = false;
+    StopMovement();
+    StopWallAttack();
     ClearEscortSpeedLimit(Mage);
-    ResumeAfterMage(Mage);
-
+    WaitingForMage.Reset();
     EscortMage.Reset();
+    if (IsAlive()) MoveToTarget();
 
     UE_LOG(LogTemp, Log,
         TEXT("[Swordsman] Released from mage"));
@@ -398,6 +408,7 @@ void AEnemySwordsmanAI::ClearEscortSpeedLimit(
 
 void AEnemySwordsmanAI::MoveToTarget()
 {
+    if (IsEscortMovementControlled()) return;
     if (!bInitialMovementAllowed)
     {
         return;
@@ -416,7 +427,21 @@ void AEnemySwordsmanAI::MoveToTarget()
         return;
     }
 
-    Super::MoveToTarget();
+    auto* AI = Cast<AAIController>(GetController());
+    auto* Building = Cast<ARICBuilding>(Capitol.Get());
+    if (!AI || !IsValid(Building) || !Building->IsAlive() ||
+        AI->GetMoveStatus() == EPathFollowingStatus::Moving ||
+        EnemyCombatNavigation::CanAttack(this, Building, AttackRange)) return;
+    FVector Destination;
+    if (auto* Mage = Cast<AEnemyMageAI>(EscortMage.Get()))
+    {
+        if (!Mage->FindEscortMarchDestination(this, Destination)) return;
+    }
+    else if (!EnemyCombatNavigation::FindApproach(this, Building, AttackRange, Destination)) return;
+    const auto Result = AI->MoveToLocation(Destination, EnemyCombatNavigation::AcceptanceRadius,
+        false, true, false, false, nullptr, false);
+    if (Result == EPathFollowingRequestResult::RequestSuccessful)
+        UE_LOG(LogTemp, Log, TEXT("[Swordsman] Complete Capitol surface route: %s"), *Destination.ToString());
 }
 
 void AEnemySwordsmanAI::AllowInitialMovement()
@@ -445,44 +470,17 @@ bool AEnemySwordsmanAI::IsValidWall(AActor* Actor) const
         Wall->IsAlive();
 }
 
-FVector AEnemySwordsmanAI::GetClosestWallPoint(
-    const AActor* Wall) const
+FVector AEnemySwordsmanAI::GetClosestWallPoint(const AActor* Wall) const
 {
-    if (!IsValid(Wall))
-    {
-        return GetActorLocation();
-    }
-
-    const FBox Bounds =
-        Wall->GetComponentsBoundingBox();
-
-    const FVector Position =
-        GetActorLocation();
-
-    if (!Bounds.IsValid)
-    {
-        return Wall->GetActorLocation();
-    }
-
-    return FVector(
-        FMath::Clamp(Position.X, Bounds.Min.X, Bounds.Max.X),
-        FMath::Clamp(Position.Y, Bounds.Min.Y, Bounds.Max.Y),
-        Position.Z
-    );
+    const auto* Building = Cast<ARICBuilding>(Wall);
+    FVector Point = GetActorLocation();
+    EnemyCombatNavigation::GetSurfacePoint(GetActorLocation(), Building, Point);
+    return Point;
 }
 
-float AEnemySwordsmanAI::GetDistanceToWall(
-    const AActor* Wall) const
+float AEnemySwordsmanAI::GetDistanceToWall(const AActor* Wall) const
 {
-    if (!IsValid(Wall))
-    {
-        return TNumericLimits<float>::Max();
-    }
-
-    return FVector::Dist2D(
-        GetActorLocation(),
-        GetClosestWallPoint(Wall)
-    );
+    return EnemyCombatNavigation::SurfaceDistance(GetActorLocation(), Cast<ARICBuilding>(Wall));
 }
 
 // ==========================================
@@ -491,6 +489,16 @@ float AEnemySwordsmanAI::GetDistanceToWall(
 
 void AEnemySwordsmanAI::CheckWallAhead()
 {
+    if (FVector::Dist2D(GetActorLocation(), RejectedFromPosition) > 100.f)
+        OnCombatNavigationChanged(nullptr);
+    if (bApproachingWall && !IsEscortMovementControlled())
+    {
+        UpdateWallApproach(FMath::Max(0.05f, WallCheckInterval));
+        return;
+    }
+    if (IsEscortCombatBlocked()) return;
+    if (const auto* Mage = Cast<AEnemyMageAI>(EscortMage.Get()))
+        if (!Mage->CanSelectEscortObstacle(this)) return;
     if (!IsAlive() ||
         IsWaitingForMage() ||
         bAttackingWall ||
@@ -551,8 +559,8 @@ void AEnemySwordsmanAI::CheckWallAhead()
             continue;
         }
 
-        const float Distance =
-            GetDistanceToWall(Actor);
+        if (RejectedWalls.Contains(Cast<ARICBuilding>(Actor))) continue;
+        const float Distance = GetDistanceToWall(Actor);
 
         if (Distance > WallDetectionDistance)
         {
@@ -589,9 +597,16 @@ void AEnemySwordsmanAI::CheckWallAhead()
         {
             ARICBuilding* Wall = *It;
             if (!IsValidWall(Wall)) continue;
+            if (RejectedWalls.Contains(Wall)) continue;
             const float Distance = GetDistanceToWall(Wall);
             if (Distance < BestDistance)
             {
+                FVector Approach;
+                if (!EnemyCombatNavigation::FindApproach(this, Wall, WallAttackDistance, Approach))
+                {
+                    RejectedWalls.Add(Wall, GetWorld()->GetTimeSeconds());
+                    continue;
+                }
                 BestDistance = Distance;
                 NearestBlockingWall = Wall;
             }
@@ -607,6 +622,7 @@ void AEnemySwordsmanAI::CheckWallAhead()
     {
         OnObstacleDetected(ClosestWall);
     }
+    else if (HasFreePathToCapitol()) MoveToTarget();
 }
 
 // ==========================================
@@ -615,42 +631,14 @@ void AEnemySwordsmanAI::CheckWallAhead()
 
 bool AEnemySwordsmanAI::HasFreePathToCapitol() const
 {
-    if (!IsValid(Capitol) || !GetWorld())
-    {
-        return false;
-    }
-
-    UNavigationSystemV1* NavSys =
-        FNavigationSystem::GetCurrent<UNavigationSystemV1>(
-            GetWorld());
-
-    if (!NavSys)
-    {
-        return false;
-    }
-
-    FNavLocation Destination;
-
-    if (!NavSys->ProjectPointToNavigation(
-        Capitol->GetActorLocation(),
-        Destination,
-        FVector(250.f, 250.f, 300.f)))
-    {
-        return false;
-    }
-
-    UNavigationPath* Path =
-        NavSys->FindPathToLocationSynchronously(
-            GetWorld(),
-            GetActorLocation(),
-            Destination.Location,
-            const_cast<AEnemySwordsmanAI*>(this)
-        );
-
-    return IsValid(Path) &&
-        Path->IsValid() &&
-        !Path->IsPartial() &&
-        Path->PathPoints.Num() >= 2;
+    if (!GetWorld() || !IsValid(Capitol)) return false;
+    const float Now = GetWorld()->GetTimeSeconds();
+    if (Now < NextCapitolRouteCheck) return bCachedCapitolRoute;
+    NextCapitolRouteCheck = Now + 1.f;
+    FVector Destination;
+    bCachedCapitolRoute = EnemyCombatNavigation::FindApproach(const_cast<AEnemySwordsmanAI*>(this),
+        Cast<ARICBuilding>(Capitol.Get()), AttackRange, Destination);
+    return bCachedCapitolRoute;
 }
 
 // ==========================================
@@ -660,6 +648,9 @@ bool AEnemySwordsmanAI::HasFreePathToCapitol() const
 void AEnemySwordsmanAI::OnObstacleDetected(
     AActor* Obstacle)
 {
+    if (IsEscortCombatBlocked()) return;
+    if (const auto* Mage = Cast<AEnemyMageAI>(EscortMage.Get()))
+        if (!Mage->CanSelectEscortObstacle(this)) return;
     if (!IsAlive() ||
         IsWaitingForMage() ||
         !IsValidWall(Obstacle) ||
@@ -811,13 +802,13 @@ bool AEnemySwordsmanAI::TryAvoidWall(AActor* Wall)
     const EPathFollowingRequestResult::Type Result =
         ControllerAI->MoveToLocation(
             BestPoint,
-            75.f,
-            true,
+            8.f,
+            false,
             true,
             true,
             false,
             nullptr,
-            true
+            false
         );
 
     if (Result == EPathFollowingRequestResult::Failed)
@@ -918,12 +909,27 @@ void AEnemySwordsmanAI::AuthorizeEscortWallAttack(AActor* Mage, AActor* Wall)
     if (!IsAlive() || !IsAssignedToMage(Mage) || !IsValidWall(Wall) ||
         TargetWall.Get() != Wall || !bAttackingWall) return;
     bEscortWallAttackAuthorized = true;
-    if (GetDistanceToWall(Wall) <= WallAttackDistance)
+    if (EnemyCombatNavigation::CanAttack(this, TargetWall, WallAttackDistance))
         BeginWallDamage();
+}
+
+bool AEnemySwordsmanAI::IsEscortCombatBlocked() const
+{
+    const auto* Mage = Cast<AEnemyMageAI>(EscortMage.Get());
+    return IsValid(Mage) && Mage->OwnsEscortMovement() && !Mage->IsEscortMarching();
+}
+
+bool AEnemySwordsmanAI::IsEscortMovementControlled() const
+{
+    const auto* Mage = Cast<AEnemyMageAI>(EscortMage.Get());
+    return IsValid(Mage) && Mage->OwnsEscortMovement();
 }
 
 void AEnemySwordsmanAI::StartWallAttack(AActor* Wall)
 {
+    if (IsEscortCombatBlocked()) return;
+    if (const auto* Mage = Cast<AEnemyMageAI>(EscortMage.Get()))
+        if (!Mage->CanSelectEscortObstacle(this)) return;
     if (!IsAlive() ||
         IsWaitingForMage() ||
         !IsValidWall(Wall))
@@ -942,11 +948,17 @@ void AEnemySwordsmanAI::StartWallAttack(AActor* Wall)
     StopMovement();
 
     const float Distance = GetDistanceToWall(Wall);
+    ApproachStartTime = GetWorld()->GetTimeSeconds();
+    PreviousWallDistance = Distance;
+    StuckTime = 0.f;
+    bWallApproachMoveIssued = false;
+    // In an escort this is only a proposal. The mage commands every approach.
+    if (HasEscortMage()) return;
 
-    if (Distance <= WallAttackDistance)
+    if (EnemyCombatNavigation::CanAttack(this, TargetWall, WallAttackDistance))
     {
         if (bEscortWallAttackAuthorized) BeginWallDamage();
-        else { bApproachingWall = true; SetActorTickEnabled(true); }
+        else { bApproachingWall = true; SetActorTickEnabled(false); }
     }
     else
     {
@@ -958,119 +970,52 @@ void AEnemySwordsmanAI::StartWallAttack(AActor* Wall)
         PreviousWallDistance = Distance;
         StuckTime = 0.f;
 
-        SetActorTickEnabled(true);
+        SetActorTickEnabled(false);
     }
 }
 
-void AEnemySwordsmanAI::UpdateWallApproach(
-    float DeltaSeconds)
+void AEnemySwordsmanAI::UpdateWallApproach(float DeltaSeconds)
 {
-    if (IsWaitingForMage())
-    {
-        return;
-    }
-
+    if (IsWaitingForMage() || HasEscortMage()) return;
     ARICBuilding* Wall = TargetWall.Get();
-
-    if (!IsAlive() || !IsValidWall(Wall))
-    {
-        OnWallDestroyed();
-        return;
-    }
-
-    const float Distance = GetDistanceToWall(Wall);
-
-    if (Distance <= WallAttackDistance)
-    {
-        if (bEscortWallAttackAuthorized)
-        {
-            BeginWallDamage();
-        }
-        else
-        {
-            // Stay in attack range, under the dome, until all escorts are ready.
-            StopMovement();
-            if (UCharacterMovementComponent* Move = GetCharacterMovement())
-                Move->StopMovementImmediately();
-        }
-        return;
-    }
-
-    FVector Direction =
-        GetClosestWallPoint(Wall) -
-        GetActorLocation();
-
-    Direction.Z = 0.f;
-
-    if (!Direction.Normalize())
+    if (!IsAlive() || !IsValidWall(Wall)) { OnWallDestroyed(); return; }
+    if (EnemyCombatNavigation::CanAttack(this, Wall, WallAttackDistance))
     {
         BeginWallDamage();
         return;
     }
-
-    const float Elapsed =
-        GetWorld()->GetTimeSeconds() -
-        ApproachStartTime;
-
-    if (Elapsed >= WallApproachTimeout)
+    auto* AI = Cast<AAIController>(GetController());
+    if (!AI) return;
+    const float Now = GetWorld()->GetTimeSeconds();
+    const float Distance = GetDistanceToWall(Wall);
+    if (Distance < PreviousWallDistance - 2.f)
     {
-        StopWallAttack();
-        MoveToTarget();
-        return;
+        PreviousWallDistance = Distance;
+        ApproachStartTime = Now;
     }
-
-    if (Distance < PreviousWallDistance - 0.5f)
+    if (bWallApproachMoveIssued && AI->GetMoveStatus() == EPathFollowingStatus::Moving &&
+        Now - ApproachStartTime < FMath::Max(1.f, WallApproachTimeout)) return;
+    if (bWallApproachMoveIssued)
     {
-        StuckTime = 0.f;
-    }
-    else
-    {
-        StuckTime += DeltaSeconds;
-    }
-
-    PreviousWallDistance = Distance;
-
-    if (StuckTime >= 1.5f)
-    {
-        StopWallAttack();
-        MoveToTarget();
-        return;
-    }
-
-    UCharacterMovementComponent* Movement =
-        GetCharacterMovement();
-
-    if (!Movement)
-    {
+        UE_LOG(LogTemp, Warning, TEXT("[Swordsman] Reset wall %s: movement failed/no progress"), *GetNameSafe(Wall));
+        RejectedWalls.Add(Wall, Now);
+        StopMovement();
         StopWallAttack();
         return;
     }
-
-    if (SavedWalkSpeed <= 0.f)
+    if (!EnemyCombatNavigation::FindApproach(this, Wall, WallAttackDistance, WallApproachDestination))
     {
-        SavedWalkSpeed = Movement->MaxWalkSpeed;
+        UE_LOG(LogTemp, Warning, TEXT("[Swordsman] Rejected wall %s: no complete approach path"), *GetNameSafe(Wall));
+        RejectedWalls.Add(Wall, Now);
+        StopWallAttack();
+        return;
     }
-
-    // Do not sprint away from the escort mage when approaching a wall.
-    const float ApproachSpeed = HasEscortMage()
-        ? FMath::Min(WallApproachSpeed, 180.f)
-        : WallApproachSpeed;
-    Movement->MaxWalkSpeed = FMath::Max(ApproachSpeed, 50.f);
-
-    if (AActor* Mage = EscortMage.Get())
-    {
-        const FVector Offset = GetActorLocation() - Mage->GetActorLocation();
-        const float Along = FVector::DotProduct(Offset.GetSafeNormal2D(), Direction);
-        // Let the mage catch up rather than leaving its protective dome.
-        if (Along > 0.15f && Offset.Size2D() > 115.f)
-        {
-            Movement->StopMovementImmediately();
-            return;
-        }
-    }
-    AddMovementInput(Direction, 1.f);
-
-    SetActorRotation(Direction.Rotation());
+    UE_LOG(LogTemp, Log, TEXT("[Swordsman] Confirmed approach %s: %s"),
+        *GetNameSafe(Wall), *WallApproachDestination.ToString());
+    bWallApproachMoveIssued = true;
+    ApproachStartTime = Now;
+    AI->MoveToLocation(WallApproachDestination, EnemyCombatNavigation::AcceptanceRadius,
+        false, true, false, false, nullptr, false);
 }
 
 void AEnemySwordsmanAI::BeginWallDamage()
@@ -1082,8 +1027,8 @@ void AEnemySwordsmanAI::BeginWallDamage()
         return;
     }
 
-    if (HasEscortMage() && !bEscortWallAttackAuthorized)
-        return;
+    if (HasEscortMage() && !bEscortWallAttackAuthorized) return;
+    if (!EnemyCombatNavigation::CanAttack(this, TargetWall, WallAttackDistance)) return;
 
     StopWallApproach();
     StopMovement();
@@ -1105,6 +1050,7 @@ void AEnemySwordsmanAI::BeginWallDamage()
 void AEnemySwordsmanAI::StopWallApproach()
 {
     bApproachingWall = false;
+    bWallApproachMoveIssued = false;
     SetActorTickEnabled(false);
 
     if (SavedWalkSpeed > 0.f &&
@@ -1137,7 +1083,7 @@ void AEnemySwordsmanAI::AttackWall()
 
     const float Distance = GetDistanceToWall(Wall);
 
-    if (Distance > WallAttackDistance + 30.f)
+    if (!EnemyCombatNavigation::CanAttack(this, Wall, WallAttackDistance))
     {
         GetWorldTimerManager().ClearTimer(WallAttackTimer);
 
@@ -1149,7 +1095,7 @@ void AEnemySwordsmanAI::AttackWall()
         PreviousWallDistance = Distance;
         StuckTime = 0.f;
 
-        SetActorTickEnabled(true);
+        SetActorTickEnabled(false);
         return;
     }
 
@@ -1200,11 +1146,9 @@ void AEnemySwordsmanAI::StopWallAttack()
 void AEnemySwordsmanAI::OnWallDestroyed()
 {
     StopWallAttack();
-
-    if (IsAlive() && !IsWaitingForMage())
-    {
-        MoveToTarget();
-    }
+    // The mage owns the post-wall cast and releases the group on cast completion.
+    if (HasEscortMage()) { StopMovement(); return; }
+    if (IsAlive() && !IsWaitingForMage()) MoveToTarget();
 }
 
 // ==========================================
@@ -1213,52 +1157,9 @@ void AEnemySwordsmanAI::OnWallDestroyed()
 
 
 
-static float GetSwordsmanCapitolSurfaceDistance(
-    const AActor* From,
-    const AActor* Building)
-{
-    if (!IsValid(From) || !IsValid(Building))
-    {
-        return TNumericLimits<float>::Max();
-    }
-
-    const FVector FromLocation = From->GetActorLocation();
-
-    // �������� ������� ���������.
-    FVector BoundsOrigin = FVector::ZeroVector;
-    FVector BoundsExtent = FVector::ZeroVector;
-
-    Building->GetActorBounds(
-        true,
-        BoundsOrigin,
-        BoundsExtent
-    );
-
-    // ��������� �������������� ����� ������.
-    // Ignore the outermost 30 cm of decorative bounds.
-    BoundsExtent.X = FMath::Max(0.f, BoundsExtent.X - 30.f);
-    BoundsExtent.Y = FMath::Max(0.f, BoundsExtent.Y - 30.f);
-
-    const FBox BuildingBounds(
-        BoundsOrigin - BoundsExtent,
-        BoundsOrigin + BoundsExtent
-    );
-
-    // ������� ��������� ����� ������ � �������.
-    const FVector ClosestPoint =
-        BuildingBounds.GetClosestPointTo(FromLocation);
-
-    // ������� �������������� ����������.
-    return FVector::Dist2D(
-        FromLocation,
-        ClosestPoint
-    );
-}
-
-
-
 void AEnemySwordsmanAI::CheckCapitolDistance()
 {
+    if (IsEscortCombatBlocked() || IsWaitingForMage()) return;
     if (!IsAlive() || bAttackingCapitol ||
         bAttackingWall || bAvoidingWall)
     {
@@ -1274,7 +1175,7 @@ void AEnemySwordsmanAI::CheckCapitolDistance()
         return;
     }
 
-    if (GetSwordsmanCapitolSurfaceDistance(this, Building) <= AttackRange)
+    if (EnemyCombatNavigation::CanAttack(this, Building, AttackRange))
     {
         // Capitol combat always overrides escort waiting.
         if (IsWaitingForMage())
@@ -1287,6 +1188,7 @@ void AEnemySwordsmanAI::CheckCapitolDistance()
 
 void AEnemySwordsmanAI::StartCapitolAttack()
 {
+    if (IsEscortCombatBlocked() || IsWaitingForMage()) return;
     ARICBuilding* Building =
         Cast<ARICBuilding>(Capitol.Get());
 
@@ -1307,6 +1209,7 @@ void AEnemySwordsmanAI::StartCapitolAttack()
     StopWallAvoidance();
 
     bAttackingCapitol = true;
+    UE_LOG(LogTemp, Log, TEXT("[Swordsman] %s started Capitol attack"), *GetName());
     StopMovement();
 
     GetWorldTimerManager().SetTimer(
@@ -1320,6 +1223,7 @@ void AEnemySwordsmanAI::StartCapitolAttack()
 
 void AEnemySwordsmanAI::AttackCapitol()
 {
+    if (IsEscortCombatBlocked()) return;
     ARICBuilding* Building =
         Cast<ARICBuilding>(Capitol.Get());
 
@@ -1331,7 +1235,7 @@ void AEnemySwordsmanAI::AttackCapitol()
         return;
     }
 
-    if (GetSwordsmanCapitolSurfaceDistance(this, Building) > AttackRange * 1.35f)
+    if (!EnemyCombatNavigation::CanAttack(this, Building, AttackRange))
     {
         StopCapitolAttack();
         MoveToTarget();

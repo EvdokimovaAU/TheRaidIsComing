@@ -13,6 +13,7 @@ class ATargetPoint;
 struct FActiveSpawnGroup
 {
     TWeakObjectPtr<ATargetPoint> SpawnPoint;
+    TWeakObjectPtr<AEnemyAI> PendingCompanion;
 
     int32 RemainingSwordsmen = 0;
     int32 RemainingMages = 0;
@@ -100,13 +101,15 @@ private:
     bool SpawnEnemy(
         FActiveSpawnGroup& Group,
         TSubclassOf<AEnemyAI> EnemyClass,
-        int32& RemainingCount
+        int32& RemainingCount,
+        AEnemyAI** OutEnemy = nullptr
     );
 
     bool FindFreeSpawnLocation(
         ATargetPoint* Point,
         TSubclassOf<AEnemyAI> EnemyClass,
-        FVector& OutLocation
+        FVector& OutLocation,
+        AEnemyAI* Companion = nullptr
     ) const;
 
     bool IsFarEnoughFromEnemies(

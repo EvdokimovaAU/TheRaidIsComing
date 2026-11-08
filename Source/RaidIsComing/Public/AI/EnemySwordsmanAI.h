@@ -6,6 +6,7 @@
 #include "EnemySwordsmanAI.generated.h"
 
 class ARICBuilding;
+class ANavigationData;
 
 UCLASS()
 class RAIDISCOMING_API AEnemySwordsmanAI : public AEnemyAI
@@ -175,6 +176,20 @@ protected:
 
 private:
 
+    friend class AEnemyMageAI;
+    friend class FEnemyEscortObstacleTest;
+    friend class FEnemyEscortMarchTest;
+    UFUNCTION()
+    void OnCombatNavigationChanged(ANavigationData* NavData);
+    FVector RejectedFromPosition = FVector::ZeroVector;
+    mutable float NextCapitolRouteCheck = 0.f;
+    mutable bool bCachedCapitolRoute = false;
+    bool IsEscortMovementControlled() const;
+    bool IsEscortCombatBlocked() const;
+    TMap<TWeakObjectPtr<ARICBuilding>, float> RejectedWalls;
+    FVector WallApproachDestination = FVector::ZeroVector;
+    bool bWallApproachMoveIssued = false;
+
     // ======================================
     // WALL HELPERS
     // ======================================
@@ -250,6 +265,8 @@ private:
     float PreviousWallDistance = 0.0f;
 
     float StuckTime = 0.0f;
+
+    float NextWallNavRetryTime = 0.f;
 
     float SavedWalkSpeed = 0.0f;
 

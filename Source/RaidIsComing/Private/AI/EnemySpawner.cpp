@@ -3,6 +3,12 @@
 
 #include "AI/WaveManager.h"
 #include "AI/EnemyAI.h"
+#include "AI/EnemyMageAI.h"
+#include "AI/EnemySwordsmanAI.h"
+#include "AI/EnemyBarrier.h"
+#include "EnemyCombatNavigation.h"
+#include "Construction/RICBuilding.h"
+#include "NavigationPath.h"
 #include "AI/GameBalanceManager.h"
 
 #include "Engine/World.h"
@@ -306,7 +312,8 @@ bool AEnemySpawner::IsFarEnoughFromEnemies(
 bool AEnemySpawner::FindFreeSpawnLocation(
     ATargetPoint* Point,
     TSubclassOf<AEnemyAI> EnemyClass,
-    FVector& OutLocation
+    FVector& OutLocation,
+    AEnemyAI* Companion
 ) const
 {
     if (!GetWorld() || !IsValid(Point) || !EnemyClass)
@@ -365,6 +372,20 @@ bool AEnemySpawner::FindFreeSpawnLocation(
             CapsuleRadius,
             CapsuleHalfHeight
         );
+
+    FVector CompanionForward = FVector::ZeroVector;
+    if (IsValid(Companion))
+    {
+        FVector Approach;
+        if (EnemyCombatNavigation::FindApproach(Companion, Cast<ARICBuilding>(Capitol.Get()),
+            Companion->AttackRange, Approach))
+        {
+            auto* Route = NavSys->FindPathToLocationSynchronously(GetWorld(),
+                Companion->GetActorLocation(), Approach, Companion);
+            if (IsValid(Route) && Route->PathPoints.Num() > 1)
+                CompanionForward = (Route->PathPoints[1] - Route->PathPoints[0]).GetSafeNormal2D();
+        }
+    }
 
     for (int32 Attempt = 0;
         Attempt < Attempts;
@@ -459,6 +480,21 @@ bool AEnemySpawner::FindFreeSpawnLocation(
             continue;
         }
 
+        if (IsValid(Companion))
+        {
+            // Place the mage behind or beside the swordsman on its actual
+            // route. A mage in front cannot be overtaken in a narrow lane.
+            if (FVector::DotProduct(NavLocation.Location - Companion->GetActorLocation(),
+                CompanionForward) > CapsuleRadius * 0.25f) continue;
+            const auto* MageDefault = Cast<AEnemyMageAI>(EnemyDefault);
+            const auto* DomeDefault = MageDefault && MageDefault->BarrierClass
+                ? MageDefault->BarrierClass->GetDefaultObject<AEnemyBarrier>() : nullptr;
+            const float CoverRadius = DomeDefault ? DomeDefault->BarrierRadius : 180.f;
+            auto* Path = NavSys->FindPathToLocationSynchronously(GetWorld(),
+                Companion->GetActorLocation(), NavLocation.Location, Companion);
+            if (!IsValid(Path) || !Path->IsValid() || Path->IsPartial() ||
+                Path->GetPathLength() > CoverRadius - CapsuleRadius) continue;
+        }
         OutLocation = SpawnLocation;
         return true;
     }
@@ -473,7 +509,8 @@ bool AEnemySpawner::FindFreeSpawnLocation(
 bool AEnemySpawner::SpawnEnemy(
     FActiveSpawnGroup& Group,
     TSubclassOf<AEnemyAI> EnemyClass,
-    int32& RemainingCount
+    int32& RemainingCount,
+    AEnemyAI** OutEnemy
 )
 {
     if (RemainingCount <= 0 ||
@@ -496,7 +533,8 @@ bool AEnemySpawner::SpawnEnemy(
     if (!FindFreeSpawnLocation(
         Point,
         EnemyClass,
-        SpawnLocation))
+        SpawnLocation,
+        EnemyClass->IsChildOf(AEnemyMageAI::StaticClass()) ? Group.PendingCompanion.Get() : nullptr))
     {
         return false;
     }
@@ -520,6 +558,7 @@ bool AEnemySpawner::SpawnEnemy(
         return false;
     }
 
+    if (OutEnemy) *OutEnemy = Enemy;
     --RemainingCount;
 
     RegisteredEnemies.Add(
@@ -562,43 +601,27 @@ bool AEnemySpawner::TrySpawnFromGroup(
         return false;
     }
 
-    bool bSpawned = false;
-
-    // Spawn a swordsman and mage in the SAME
-    // scheduler call, without SpawnInterval.
-    if (Group.RemainingSwordsmen > 0 &&
-        Group.RemainingMages > 0)
+    // A pending pair is completed before spawning another swordsman. Both
+    // members are bound in the same scheduler call, before any behavior timer.
+    if (Group.RemainingMages > 0 && (Group.PendingCompanion.IsValid() || Group.RemainingSwordsmen > 0))
     {
-        const bool bSwordsmanSpawned =
-            SpawnEnemy(
-                Group,
-                SwordsmanClass,
-                Group.RemainingSwordsmen
-            );
-
-        if (!bSwordsmanSpawned)
+        bool bSpawnedSword = false;
+        if (!Group.PendingCompanion.IsValid())
         {
-            return false;
+            AEnemyAI* Sword = nullptr;
+            if (!SpawnEnemy(Group, SwordsmanClass, Group.RemainingSwordsmen, &Sword)) return false;
+            Group.PendingCompanion = Sword;
+            bSpawnedSword = true;
         }
-
-        bSpawned = true;
-
-        // The mage appears immediately next to
-        // the swordsman, if space is available.
-        const bool bMageSpawned =
-            SpawnEnemy(
-                Group,
-                MageClass,
-                Group.RemainingMages
-            );
-
-        if (!bMageSpawned)
+        AEnemyAI* MageActor = nullptr;
+        if (SpawnEnemy(Group, MageClass, Group.RemainingMages, &MageActor))
         {
-            UE_LOG(LogTemp, Warning,
-                TEXT("[EnemySpawner] Mage could not spawn beside swordsman. Will retry."));
+            if (auto* Mage = Cast<AEnemyMageAI>(MageActor))
+                Mage->BindSpawnCompanion(Cast<AEnemySwordsmanAI>(Group.PendingCompanion.Get()));
+            Group.PendingCompanion.Reset();
+            return true;
         }
-
-        return bSpawned;
+        return bSpawnedSword;
     }
 
     // Spawn any remaining swordsmen.
