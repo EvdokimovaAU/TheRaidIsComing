@@ -35,7 +35,8 @@ bool ProjectMeetingSlot(AEnemyAI* Member, const FVector& Candidate, FVector& Out
 
 bool AEnemyMageAI::BindSpawnCompanion(AEnemySwordsmanAI* Ally)
 {
-    if (!IsValid(Ally) || !Ally->TryAssignEscortMage(this)) return false;
+    if (!IsValid(Ally) || IsInCapitolRecruitmentZone(this) || IsInCapitolRecruitmentZone(Ally) ||
+        !Ally->TryAssignEscortMage(this)) return false;
     EscortGroup.AddUnique(Ally);
     JoinedEscort.Add(Ally);
     FollowedSwordsman = Ally;
@@ -200,7 +201,8 @@ void AEnemyMageAI::CancelRecruitMeeting(const TCHAR* Reason)
 
 bool AEnemyMageAI::ReserveRecruit(AEnemySwordsmanAI* Ally)
 {
-    if (!BuildEscortRoute() || MeetingRecruit.IsValid() || !IsAllyOnRoute(Ally)) return false;
+    if (IsInCapitolRecruitmentZone(this) || IsInCapitolRecruitmentZone(Ally) ||
+        !BuildEscortRoute() || MeetingRecruit.IsValid() || !IsAllyOnRoute(Ally)) return false;
     const float LeadProgress = ProjectOntoEscortRoute(GetActorLocation(), 0.f, EscortRouteDistances.Last());
     const float Progress = ProjectOntoEscortRoute(Ally->GetActorLocation(), LeadProgress, EscortRouteDistances.Last());
     const float Radius = FMath::Max(GetCapsuleComponent()->GetScaledCapsuleRadius(),
@@ -215,6 +217,9 @@ bool AEnemyMageAI::ReserveRecruit(AEnemySwordsmanAI* Ally)
         TMap<TWeakObjectPtr<AEnemyAI>, FVector> Slots;
         FVector Slot;
         if (!ProjectMeetingSlot(this, Center, Slot)) continue;
+        if (EnemyCombatNavigation::SurfaceDistance(Slot + FVector(0.f, 0.f,
+            GetCapsuleComponent()->GetScaledCapsuleHalfHeight()), Cast<ARICBuilding>(Capitol.Get())) <=
+            CapitolRecruitmentExclusionDistance) continue;
         Slots.Add(this, Slot);
         bool bValid = true;
         for (const auto& Weak : EscortGroup)
@@ -249,6 +254,8 @@ bool AEnemyMageAI::UpdateRecruitMeeting()
 {
     auto* Recruit = MeetingRecruit.Get();
     if (!IsValid(Recruit)) return false;
+    if (IsInCapitolRecruitmentZone(this) || IsInCapitolRecruitmentZone(Recruit))
+    { CancelRecruitMeeting(TEXT("Capitol recruitment exclusion zone")); return false; }
     if (!IsAllyOnRoute(Recruit)) { CancelRecruitMeeting(TEXT("route no longer passes rendezvous")); return false; }
     const float Lead = FollowedSwordsman.IsValid()
         ? ProjectOntoEscortRoute(FollowedSwordsman->GetActorLocation(), 0.f, EscortRouteDistances.Last())
@@ -278,9 +285,9 @@ bool AEnemyMageAI::UpdateRecruitMeeting()
     for (const auto& Weak : EscortGroup) if (Weak.IsValid()) Weak->StopMovement();
     StopMovement();
     StopNearbySwordsmen();
-    if (HasActiveBarrier()) RemoveBarrierInternal(false);
     ClearMarchPlan();
     UE_LOG(LogTemp, Log, TEXT("[Mage] Meeting assembled; replacing dome for %d swordsmen"), JoinedEscort.Num());
+    if (HasActiveBarrier() && !BeginBarrierRemoval()) return true;
     if (CanCreateBarrier()) Barrier();
     return true;
 }

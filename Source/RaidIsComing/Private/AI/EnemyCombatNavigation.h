@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 
 class AEnemyAI;
+class AActor;
 class ARICBuilding;
 
 // Distances are measured from the character centre to actual building collision.
@@ -10,6 +11,7 @@ class ARICBuilding;
 namespace EnemyCombatNavigation
 {
     constexpr float AcceptanceRadius = 8.f;
+    void FaceTarget(AEnemyAI* Enemy, const AActor* Target);
     bool GetSurfacePoint(const FVector& Position, const ARICBuilding* Building, FVector& Point);
     float SurfaceDistance(const FVector& Position, const ARICBuilding* Building);
     bool CanAttack(const AEnemyAI* Enemy, const ARICBuilding* Building, float Range);

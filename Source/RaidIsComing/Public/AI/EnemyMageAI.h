@@ -64,11 +64,18 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AI|Animation")
     TObjectPtr<UAnimMontage> BarrierMontage = nullptr;
 
+    // Optional dedicated removal animation. If unset, reverse BarrierMontage.
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AI|Animation")
+    TObjectPtr<UAnimMontage> BarrierRemovalMontage = nullptr;
+
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AI|Animation")
     TObjectPtr<UAnimMontage> AttackMontage = nullptr;
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AI|Animation")
     float BarrierSpawnDelay = 0.45f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AI|Magic", meta = (ClampMin = "0.0"))
+    float CapitolRecruitmentExclusionDistance = 350.f;
 
     // ==========================================
     // BARRIER STATE
@@ -163,7 +170,10 @@ public:
     bool CanSelectEscortObstacle(const AEnemySwordsmanAI* Ally) const;
     bool FindEscortMarchDestination(AEnemySwordsmanAI* Ally, FVector& Destination);
     bool BindSpawnCompanion(AEnemySwordsmanAI* Ally);
-    bool IsEscortMarching() const { return bEscortMarchActive; }
+    bool IsEscortMarching() const
+    {
+        return bEscortMarchActive && !bCastingBarrier && !bRemovingBarrier && !bRecruitBarrierRefreshCasting;
+    }
 
 protected:
 
@@ -241,6 +251,14 @@ private:
     // ==========================================
 
     bool bCastingBarrier = false;
+    bool bRemovingBarrier = false;
+    bool bBarrierRemovalForCombat = false;
+    FTimerHandle BarrierRemovalTimer;
+    TWeakObjectPtr<UAnimMontage> PlayingBarrierRemovalMontage;
+    bool BeginBarrierRemoval();
+    void FinishBarrierRemoval();
+    void CancelBarrierRemoval();
+    bool IsInCapitolRecruitmentZone(const AEnemyAI* Enemy) const;
     bool bBarrierSpawnedThisCast = false;
 
     bool bAttacking = false;

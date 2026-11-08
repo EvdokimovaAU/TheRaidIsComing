@@ -1211,6 +1211,8 @@ void AEnemySwordsmanAI::StartCapitolAttack()
     bAttackingCapitol = true;
     UE_LOG(LogTemp, Log, TEXT("[Swordsman] %s started Capitol attack"), *GetName());
     StopMovement();
+    GetCharacterMovement()->StopMovementImmediately();
+    EnemyCombatNavigation::FaceTarget(this, Building);
 
     GetWorldTimerManager().SetTimer(
         CapitolAttackTimer,
@@ -1242,6 +1244,7 @@ void AEnemySwordsmanAI::AttackCapitol()
         return;
     }
 
+    EnemyCombatNavigation::FaceTarget(this, Building);
     PlayAttackAnimation();
 
     FDamageEvent DamageEvent(

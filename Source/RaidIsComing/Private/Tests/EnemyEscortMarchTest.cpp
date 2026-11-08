@@ -76,7 +76,7 @@ bool FEnemyEscortMarchTest::RunTest(const FString& Parameters)
     Mage->BarrierClass = AEnemyBarrier::StaticClass();
     Mage->AllyDetectionRadius = Scenario == 0 ? 260.f : 800.f;
     AEnemySwordsmanAI* Recruit = Scenario == 0 ? nullptr : World->SpawnActor<AEnemySwordsmanAI>(
-        FVector(450.f, 80.f, 110.f), FRotator::ZeroRotator, Spawn);
+        FVector(600.f, 80.f, 110.f), FRotator::ZeroRotator, Spawn);
     if (Recruit)
     {
         Recruit->MovementSpeed = 75.f;
@@ -173,6 +173,16 @@ bool FEnemyEscortMarchTest::RunTest(const FString& Parameters)
         TestTrue(TEXT("Detour cancels obsolete rendezvous and releases recruit"), bRecruitCancelled);
         TestFalse(TEXT("Cancelled recruit does not remain waiting"), Recruit->IsWaitingForMage());
     }
+    auto* NearCapMage = World->SpawnActor<AEnemyMageAI>(FVector(350.f, 250.f, 110.f), FRotator::ZeroRotator, Spawn);
+    auto* NearCapSword = World->SpawnActor<AEnemySwordsmanAI>(FVector(350.f, 100.f, 110.f), FRotator::ZeroRotator, Spawn);
+    NearCapMage->SetCapitol(Capitol);
+    TestFalse(TEXT("No new spawn group can form in Capitol exclusion zone"), NearCapMage->BindSpawnCompanion(NearCapSword));
+    TestFalse(TEXT("No recruit near Capitol may be reserved"), Mage->ReserveRecruit(NearCapSword));
+    TestFalse(TEXT("Rejected Capitol swordsman remains independent"), NearCapSword->HasEscortMage());
+    Sword->SetActorRotation(FRotator::ZeroRotator);
+    Sword->AttackCapitol();
+    const FVector ToCapitol = (Capitol->GetActorLocation() - Sword->GetActorLocation()).GetSafeNormal2D();
+    TestTrue(TEXT("Capitol attack faces the Capitol"), FVector::DotProduct(Sword->GetActorForwardVector(), ToCapitol) > 0.99f);
     AddInfo(FString::Printf(TEXT("Scenario=%d reserved=%d joined=%d cancelled=%d domes=%d"),
         Scenario, bRecruitReserved, bRecruitJoined, bRecruitCancelled, DomeCount));
     }

@@ -549,7 +549,7 @@ bool AEnemySpawner::SpawnEnemy(
         GetWorld()->SpawnActor<AEnemyAI>(
             EnemyClass,
             SpawnLocation,
-            Point->GetActorRotation(),
+            (Capitol->GetActorLocation() - SpawnLocation).GetSafeNormal2D().Rotation(),
             Params
         );
 
@@ -573,6 +573,7 @@ bool AEnemySpawner::SpawnEnemy(
     WaveManager->RegisterEnemy();
 
     Enemy->SetCapitol(Capitol.Get());
+    EnemyCombatNavigation::FaceTarget(Enemy, Capitol.Get());
 
     UE_LOG(LogTemp, Warning,
         TEXT("[EnemySpawner] Spawned %s at %s | Location: %s"),
