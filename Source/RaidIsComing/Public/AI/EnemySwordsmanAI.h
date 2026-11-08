@@ -139,6 +139,12 @@ public:
 
     bool IsAttackingWall() const;
 
+    // The escort mage authorizes damage only after the entire group is in range.
+    void AuthorizeEscortWallAttack(AActor* Mage, AActor* Wall);
+    float GetEscortWallDistance(const AActor* Wall) const;
+    bool IsEscortWallAttackAuthorized() const;
+
+
     bool IsAttackingCapitol() const;
 
     // ======================================
@@ -230,6 +236,8 @@ private:
     bool bAvoidingWall = false;
 
     bool bAttackingWall = false;
+
+    bool bEscortWallAttackAuthorized = false;
 
     bool bApproachingWall = false;
 

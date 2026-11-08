@@ -159,7 +159,16 @@ void AEnemyMageAI::FindAlliesAhead()
         return;
     }
 
-    const float RadiusSq = FMath::Square(AllyDetectionRadius);
+    // A distant reservation can freeze the escort while the mage is already
+    // fighting or standing at the Capitol. Recruit only within a local
+    // rendezvous corridor, not the entire detection sphere.
+    const float RadiusSq = FMath::Square(FMath::Min(AllyDetectionRadius, 260.f));
+    if (IsValid(Capitol) &&
+        GetMageBuildingSurfaceDistance(this, Capitol.Get()) <=
+        FMath::Max(AttackRange, FollowDistance) + 180.f)
+    {
+        return;
+    }
 
     for (TActorIterator<AEnemySwordsmanAI> It(GetWorld()); It; ++It)
     {
@@ -184,7 +193,7 @@ void AEnemyMageAI::FindAlliesAhead()
             : GetActorForwardVector().GetSafeNormal2D();
         const float Along = FVector::DotProduct(AllyOffset, Forward);
         const FVector Side = AllyOffset - Forward * Along;
-        if (Along >= -FollowDistance &&
+        if (Along >= 0.f &&
             Side.Size2D() <= FMath::Max(FollowDistance * 2.f, 220.f))
         {
             AlliesAhead.Add(Ally);
@@ -283,6 +292,7 @@ void AEnemyMageAI::RefreshEscortGroup()
         if (Ally->TryAssignEscortMage(this))
         {
             EscortGroup.Add(Ally);
+            if (HasActiveBarrier()) bRecruitBarrierRefreshPending = true;
             // Reserve immediately: the swordsman must not run away.
             if (true)
             {
@@ -509,6 +519,11 @@ void AEnemyMageAI::UpdateGroupCombatState()
         return;
     }
 
+    // Wall engagements are staged under the dome first.
+    AEnemySwordsmanAI* Leader = FollowedSwordsman.Get();
+    if (IsValid(Leader) && Leader->IsAttackingWall())
+        return;
+
     if (bCastingBarrier)
     {
         CancelBarrierCast();
@@ -687,6 +702,7 @@ void AEnemyMageAI::FinishBarrierCast()
     }
 
     bCastingBarrier = false;
+    bRecruitBarrierRefreshCasting = false;
 
     ReleaseWaitingSwordsmen();
     ResetMovementRequest();
@@ -932,6 +948,56 @@ void AEnemyMageAI::StopCombat()
     ResetMovementRequest();
 }
 
+bool AEnemyMageAI::StageEscortAtWall(ARICBuilding* Wall)
+{
+    if (!IsValid(Wall) || !Wall->IsAlive()) return false;
+
+    // The mage and every recruited swordsman must reach their individual
+    // attack range before the dome is removed and any damage begins.
+    bool bEveryoneReady =
+        GetMageBuildingSurfaceDistance(this, Wall) <= WallAttackDistance;
+    const float SafeRadius = HasActiveBarrier()
+        ? FMath::Max(90.f, ActiveBarrier->BarrierRadius * 0.75f)
+        : 160.f;
+
+    for (const auto& Weak : EscortGroup)
+    {
+        AEnemySwordsmanAI* Ally = Weak.Get();
+        if (!IsValid(Ally) || !Ally->IsAlive() ||
+            !Ally->IsAssignedToMage(this)) continue;
+
+        if (Ally->IsWaitingForMage())
+        {
+            bEveryoneReady = false;
+            continue;
+        }
+        if (!Ally->IsAttackingWall() || Ally->TargetWall != Wall)
+            Ally->StartWallAttack(Wall);
+
+        if (Ally->GetEscortWallDistance(Wall) > Ally->WallAttackDistance ||
+            FVector::Dist2D(Ally->GetActorLocation(), GetActorLocation()) > SafeRadius)
+            bEveryoneReady = false;
+    }
+
+    if (!bEveryoneReady)
+    {
+        RequestMoveToActor(Wall, FMath::Max(10.f, WallAttackDistance * 0.65f));
+        return false;
+    }
+
+    StopMovement();
+    ResetMovementRequest();
+    if (HasActiveBarrier()) RemoveBarrierInternal(false);
+    if (bCastingBarrier) CancelBarrierCast();
+
+    for (const auto& Weak : EscortGroup)
+    {
+        if (AEnemySwordsmanAI* Ally = Weak.Get())
+            Ally->AuthorizeEscortWallAttack(this, Wall);
+    }
+    return true;
+}
+
 void AEnemyMageAI::UpdateCombat()
 {
     // The primary swordsman decides whether the escort fights a wall.
@@ -1023,6 +1089,11 @@ void AEnemyMageAI::UpdateCombat()
             }
         }
         return;
+    }
+
+    if (bHasLeader && Desired != Capitol.Get() && IsValid(Desired))
+    {
+        if (!StageEscortAtWall(Desired)) return;
     }
 
     // The swordsman has already initiated its attack/approach.
@@ -1315,7 +1386,8 @@ void AEnemyMageAI::UpdateMovement()
                         Candidate->GetActorLocation() - GetActorLocation(),
                         (Capitol->GetActorLocation() - GetActorLocation()).GetSafeNormal2D()) < 0.f)))
         {
-            Candidate->ResumeAfterMage(this);
+            if (!bRecruitBarrierRefreshPending && !bRecruitBarrierRefreshCasting)
+                Candidate->ResumeAfterMage(this);
         }
     }
 
@@ -1353,13 +1425,72 @@ void AEnemyMageAI::UpdateBehavior()
     RefreshEscortGroup();
     SelectSwordsman();
 
+    // Refresh the dome once the newly reserved ally is physically inside it.
+    // Everyone waits for the new cast; no one can run ahead during casting.
+    if (bRecruitBarrierRefreshPending && !bCastingBarrier &&
+        !AreProtectedAlliesAttacking() && !bAttacking)
+    {
+        bool bNewAllyInRange = false;
+        const float JoinRadius = HasActiveBarrier()
+            ? FMath::Max(90.f, ActiveBarrier->BarrierRadius * 0.70f)
+            : FollowDistance;
+        for (const auto& Weak : EscortGroup)
+        {
+            AEnemySwordsmanAI* Ally = Weak.Get();
+            if (IsValid(Ally) && Ally->IsAlive() && Ally->IsWaitingForMage() &&
+                FVector::Dist2D(GetActorLocation(), Ally->GetActorLocation()) <= JoinRadius)
+            {
+                bNewAllyInRange = true;
+                break;
+            }
+        }
+        if (bNewAllyInRange)
+        {
+            bRecruitBarrierRefreshPending = false;
+            bRecruitBarrierRefreshCasting = true;
+            if (HasActiveBarrier()) RemoveBarrierInternal(false);
+            StopMovement();
+            ResetMovementRequest();
+            StopNearbySwordsmen();
+        }
+    }
+    // If the mage has reached the Capitol while a recruit is still waiting
+    // elsewhere, the rendezvous is no longer possible. Cancel the reservation.
+    if (bRecruitBarrierRefreshPending && IsValid(Capitol) &&
+        GetMageBuildingSurfaceDistance(this, Capitol.Get()) <=
+        FMath::Max(AttackRange, FollowDistance) + 80.f)
+    {
+        for (int32 Index = EscortGroup.Num() - 1; Index >= 0; --Index)
+        {
+            AEnemySwordsmanAI* Ally = EscortGroup[Index].Get();
+            if (IsValid(Ally) && Ally->IsWaitingForMage())
+            {
+                Ally->ClearEscortSpeedLimit(this);
+                Ally->ReleaseEscortMage(this);
+                EscortGroup.RemoveAt(Index);
+            }
+        }
+        WaitingSwordsmen.Empty();
+        bRecruitBarrierRefreshPending = false;
+        SelectSwordsman();
+    }
+    if (bRecruitBarrierRefreshCasting)
+    {
+        StopMovement();
+        if (!bCastingBarrier && CanCreateBarrier())
+        {
+            Barrier();
+        }
+        return;
+    }
+
     // An escort cannot deadlock the Capitol attack by keeping allies waiting.
     if (IsValid(Capitol))
     {
         const float Distance = GetMageBuildingSurfaceDistance(this, Capitol.Get());
         if (Distance <= FMath::Max(AttackRange, FollowDistance))
         {
-            ReleaseWaitingSwordsmen();
+            if (!bRecruitBarrierRefreshPending) ReleaseWaitingSwordsmen();
         }
     }
 
@@ -1381,8 +1512,8 @@ void AEnemyMageAI::UpdateBehavior()
         }
     }
 
-    // Joining an existing dome does not require a second cast.
-    if (bAssembled && !bWaitingForPostCombatBarrier)
+    // Reserved allies stay still until the replacement dome has been cast.
+    if (bAssembled && !bWaitingForPostCombatBarrier && !bRecruitBarrierRefreshPending)
     {
         ReleaseWaitingSwordsmen();
     }

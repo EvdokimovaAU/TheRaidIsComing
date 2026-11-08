@@ -170,6 +170,7 @@ void AEnemySwordsmanAI::ReleaseEscortMage(AActor* Mage)
         return;
     }
 
+    bEscortWallAttackAuthorized = false;
     ClearEscortSpeedLimit(Mage);
     ResumeAfterMage(Mage);
 
@@ -902,6 +903,25 @@ void AEnemySwordsmanAI::StopWallAvoidance()
 // WALL ATTACK
 // ==========================================
 
+float AEnemySwordsmanAI::GetEscortWallDistance(const AActor* Wall) const
+{
+    return IsValid(Wall) ? GetDistanceToWall(Wall) : TNumericLimits<float>::Max();
+}
+
+bool AEnemySwordsmanAI::IsEscortWallAttackAuthorized() const
+{
+    return bEscortWallAttackAuthorized;
+}
+
+void AEnemySwordsmanAI::AuthorizeEscortWallAttack(AActor* Mage, AActor* Wall)
+{
+    if (!IsAlive() || !IsAssignedToMage(Mage) || !IsValidWall(Wall) ||
+        TargetWall.Get() != Wall || !bAttackingWall) return;
+    bEscortWallAttackAuthorized = true;
+    if (GetDistanceToWall(Wall) <= WallAttackDistance)
+        BeginWallDamage();
+}
+
 void AEnemySwordsmanAI::StartWallAttack(AActor* Wall)
 {
     if (!IsAlive() ||
@@ -917,6 +937,7 @@ void AEnemySwordsmanAI::StartWallAttack(AActor* Wall)
 
     TargetWall = Cast<ARICBuilding>(Wall);
     bAttackingWall = true;
+    bEscortWallAttackAuthorized = !HasEscortMage();
 
     StopMovement();
 
@@ -924,7 +945,8 @@ void AEnemySwordsmanAI::StartWallAttack(AActor* Wall)
 
     if (Distance <= WallAttackDistance)
     {
-        BeginWallDamage();
+        if (bEscortWallAttackAuthorized) BeginWallDamage();
+        else { bApproachingWall = true; SetActorTickEnabled(true); }
     }
     else
     {
@@ -960,7 +982,17 @@ void AEnemySwordsmanAI::UpdateWallApproach(
 
     if (Distance <= WallAttackDistance)
     {
-        BeginWallDamage();
+        if (bEscortWallAttackAuthorized)
+        {
+            BeginWallDamage();
+        }
+        else
+        {
+            // Stay in attack range, under the dome, until all escorts are ready.
+            StopMovement();
+            if (UCharacterMovementComponent* Move = GetCharacterMovement())
+                Move->StopMovementImmediately();
+        }
         return;
     }
 
@@ -1025,6 +1057,17 @@ void AEnemySwordsmanAI::UpdateWallApproach(
         : WallApproachSpeed;
     Movement->MaxWalkSpeed = FMath::Max(ApproachSpeed, 50.f);
 
+    if (AActor* Mage = EscortMage.Get())
+    {
+        const FVector Offset = GetActorLocation() - Mage->GetActorLocation();
+        const float Along = FVector::DotProduct(Offset.GetSafeNormal2D(), Direction);
+        // Let the mage catch up rather than leaving its protective dome.
+        if (Along > 0.15f && Offset.Size2D() > 115.f)
+        {
+            Movement->StopMovementImmediately();
+            return;
+        }
+    }
     AddMovementInput(Direction, 1.f);
 
     SetActorRotation(Direction.Rotation());
@@ -1038,6 +1081,9 @@ void AEnemySwordsmanAI::BeginWallDamage()
         OnWallDestroyed();
         return;
     }
+
+    if (HasEscortMage() && !bEscortWallAttackAuthorized)
+        return;
 
     StopWallApproach();
     StopMovement();
@@ -1073,6 +1119,8 @@ void AEnemySwordsmanAI::StopWallApproach()
 
 void AEnemySwordsmanAI::AttackWall()
 {
+    if (HasEscortMage() && !bEscortWallAttackAuthorized)
+        return;
     if (!IsAlive())
     {
         StopWallAttack();
@@ -1143,6 +1191,7 @@ void AEnemySwordsmanAI::StopWallAttack()
     StopWallApproach();
 
     bAttackingWall = false;
+    bEscortWallAttackAuthorized = false;
     TargetWall = nullptr;
 
     StopAttackAnimation();

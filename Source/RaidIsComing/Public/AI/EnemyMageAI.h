@@ -204,6 +204,8 @@ private:
     bool bBarrierDestroyed = false;
     bool bCombatWasWall = false;
     bool bWaitingForPostCombatBarrier = false;
+    bool bRecruitBarrierRefreshPending = false;
+    bool bRecruitBarrierRefreshCasting = false;
     TWeakObjectPtr<ARICBuilding> PendingGroupTarget;
 
     bool bMovingToCapitol = false;
@@ -271,6 +273,8 @@ private:
     bool AreProtectedAlliesAttacking() const;
 
     void UpdateGroupCombatState();
+
+    bool StageEscortAtWall(ARICBuilding* Wall);
 
     // ==========================================
     // COMBAT
