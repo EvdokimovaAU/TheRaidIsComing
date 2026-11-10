@@ -71,9 +71,7 @@ void AEnemyBarrier::BeginPlay()
     SphereVisual->SetVisibility(false);
 }
 
-// ==========================================
 // пюглеп аюпэепю
-// ==========================================
 
 void AEnemyBarrier::UpdateBarrierSize()
 {
@@ -88,9 +86,7 @@ void AEnemyBarrier::UpdateBarrierSize()
         FVector(Scale));
 }
 
-// ==========================================
 // юйрхбюжхъ
-// ==========================================
 
 void AEnemyBarrier::ActivateBarrier(
     float InHP,
@@ -122,9 +118,7 @@ void AEnemyBarrier::ActivateBarrier(
         BarrierRadius);
 }
 
-// ==========================================
 // онцкныемхе спнмю
-// ==========================================
 
 float AEnemyBarrier::AbsorbDamage(
     float DamageAmount)
@@ -147,9 +141,7 @@ float AEnemyBarrier::AbsorbDamage(
     return DamageAmount - AbsorbedDamage;
 }
 
-// ==========================================
 // ямърхе аюпэепю
-// ==========================================
 
 void AEnemyBarrier::RemoveBarrier()
 {
@@ -165,9 +157,7 @@ void AEnemyBarrier::RemoveBarrier()
         TEXT("[Barrier] Deactivated"));
 }
 
-// ==========================================
 // опхйпеокемхе й люцс
-// ==========================================
 
 void AEnemyBarrier::AttachToMage(
     AActor* Mage)
@@ -189,18 +179,14 @@ void AEnemyBarrier::AttachToMage(
         *Mage->GetName());
 }
 
-// ==========================================
 // опнбепйю юйрхбмнярх
-// ==========================================
 
 bool AEnemyBarrier::IsBarrierActive() const
 {
     return bActive;
 }
 
-// ==========================================
 // опнбепйю оноюдюмхъ б накюярэ
-// ==========================================
 
 bool AEnemyBarrier::ContainsLocation(
     FVector Location) const

@@ -10,7 +10,7 @@ public class RaidIsComing : ModuleRules
         PrivateDependencyModuleNames.Add("ProceduralMeshComponent");
         if (Target.bBuildEditor)
         {
-            PrivateDependencyModuleNames.Add("UnrealEd"); // PIE regression tests only.
+            PrivateDependencyModuleNames.Add("UnrealEd"); // Editor automation tests.
         }
 
         PublicDependencyModuleNames.AddRange(new string[] {
@@ -25,7 +25,8 @@ public class RaidIsComing : ModuleRules
 			"GameplayStateTreeModule",
 			"Niagara",
 			"UMG",
-			"Slate"
+			"Slate",
+            "SlateCore"
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[] { });

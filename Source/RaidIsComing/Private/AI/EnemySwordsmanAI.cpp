@@ -31,9 +31,7 @@ void AEnemySwordsmanAI::OnCombatNavigationChanged(ANavigationData* NavData)
     NextCapitolRouteCheck = 0.f;
 }
 
-// ==========================================
 // CONSTRUCTOR
-// ==========================================
 
 AEnemySwordsmanAI::AEnemySwordsmanAI()
 {
@@ -44,9 +42,7 @@ AEnemySwordsmanAI::AEnemySwordsmanAI()
     WallAttackDistance = 105.f;
 }
 
-// ==========================================
 // BEGIN PLAY
-// ==========================================
 
 void AEnemySwordsmanAI::BeginPlay()
 {
@@ -93,9 +89,7 @@ void AEnemySwordsmanAI::BeginPlay()
     );
 }
 
-// ==========================================
 // BALANCE
-// ==========================================
 
 void AEnemySwordsmanAI::ApplyEnemyBalance()
 {
@@ -132,18 +126,14 @@ void AEnemySwordsmanAI::ApplyEnemyBalance()
         FMath::Max(0.f, Settings.WallApproachSpeed);
 }
 
-// ==========================================
 // TICK
-// ==========================================
 
 void AEnemySwordsmanAI::Tick(float DeltaSeconds)
 {
     Super::Tick(DeltaSeconds);
 }
 
-// ==========================================
 // MAGE ESCORT
-// ==========================================
 
 bool AEnemySwordsmanAI::TryAssignEscortMage(AActor* Mage)
 {
@@ -321,9 +311,7 @@ bool AEnemySwordsmanAI::IsAttackingCapitol() const
     return bAttackingCapitol;
 }
 
-// ==========================================
 // ESCORT SPEED CONTROL
-// ==========================================
 
 void AEnemySwordsmanAI::SetEscortSpeedLimit(
     AActor* RequestingMage,
@@ -402,9 +390,7 @@ void AEnemySwordsmanAI::ClearEscortSpeedLimit(
     OriginalWalkSpeed = 0.f;
 }
 
-// ==========================================
 // MOVEMENT
-// ==========================================
 
 void AEnemySwordsmanAI::MoveToTarget()
 {
@@ -456,9 +442,7 @@ void AEnemySwordsmanAI::AllowInitialMovement()
     }
 }
 
-// ==========================================
 // WALL VALIDATION
-// ==========================================
 
 bool AEnemySwordsmanAI::IsValidWall(AActor* Actor) const
 {
@@ -483,9 +467,7 @@ float AEnemySwordsmanAI::GetDistanceToWall(const AActor* Wall) const
     return EnemyCombatNavigation::SurfaceDistance(GetActorLocation(), Cast<ARICBuilding>(Wall));
 }
 
-// ==========================================
 // WALL DETECTION
-// ==========================================
 
 void AEnemySwordsmanAI::CheckWallAhead()
 {
@@ -625,9 +607,7 @@ void AEnemySwordsmanAI::CheckWallAhead()
     else if (HasFreePathToCapitol()) MoveToTarget();
 }
 
-// ==========================================
 // NAVIGATION
-// ==========================================
 
 bool AEnemySwordsmanAI::HasFreePathToCapitol() const
 {
@@ -641,9 +621,7 @@ bool AEnemySwordsmanAI::HasFreePathToCapitol() const
     return bCachedCapitolRoute;
 }
 
-// ==========================================
 // WALL DECISION
-// ==========================================
 
 void AEnemySwordsmanAI::OnObstacleDetected(
     AActor* Obstacle)
@@ -679,9 +657,7 @@ void AEnemySwordsmanAI::OnObstacleDetected(
     }
 }
 
-// ==========================================
 // WALL AVOIDANCE
-// ==========================================
 
 bool AEnemySwordsmanAI::TryAvoidWall(AActor* Wall)
 {
@@ -890,9 +866,7 @@ void AEnemySwordsmanAI::StopWallAvoidance()
     AvoidanceStartTime = 0.f;
 }
 
-// ==========================================
 // WALL ATTACK
-// ==========================================
 
 float AEnemySwordsmanAI::GetEscortWallDistance(const AActor* Wall) const
 {
@@ -1151,9 +1125,7 @@ void AEnemySwordsmanAI::OnWallDestroyed()
     if (IsAlive() && !IsWaitingForMage()) MoveToTarget();
 }
 
-// ==========================================
 // CAPITOL
-// ==========================================
 
 
 
@@ -1273,9 +1245,7 @@ void AEnemySwordsmanAI::StopCapitolAttack()
     StopAttackAnimation();
 }
 
-// ==========================================
 // ANIMATIONS
-// ==========================================
 
 void AEnemySwordsmanAI::PlayAttackAnimation()
 {
@@ -1311,9 +1281,7 @@ void AEnemySwordsmanAI::StopAttackAnimation()
     }
 }
 
-// ==========================================
 // DEATH
-// ==========================================
 
 void AEnemySwordsmanAI::Die()
 {

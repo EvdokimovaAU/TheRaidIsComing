@@ -86,9 +86,7 @@ namespace ProjectileArcherHelpers
     }
 }
 
-// ==========================================
 // CONSTRUCTOR
-// ==========================================
 
 AProjectileArcher::AProjectileArcher()
 {
@@ -107,9 +105,7 @@ AProjectileArcher::AProjectileArcher()
     InitialLifeSpan = 10.0f;
 }
 
-// ==========================================
 // BEGIN PLAY
-// ==========================================
 
 void AProjectileArcher::BeginPlay()
 {
@@ -118,9 +114,7 @@ void AProjectileArcher::BeginPlay()
     StartLocation = GetActorLocation();
 }
 
-// ==========================================
 // INITIALIZATION
-// ==========================================
 
 void AProjectileArcher::InitializeProjectile(
     AAIBase* NewTarget,
@@ -155,9 +149,7 @@ void AProjectileArcher::InitializeProjectile(
     bInitialized = true;
 }
 
-// ==========================================
 // MOVEMENT
-// ==========================================
 
 void AProjectileArcher::Tick(float DeltaTime)
 {
@@ -222,9 +214,7 @@ void AProjectileArcher::Tick(float DeltaTime)
     }
 }
 
-// ==========================================
 // DAMAGE
-// ==========================================
 
 void AProjectileArcher::HitTarget()
 {

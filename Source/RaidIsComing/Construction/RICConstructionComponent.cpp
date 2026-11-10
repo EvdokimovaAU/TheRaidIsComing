@@ -87,7 +87,7 @@ namespace
                 const double Distance = FMath::Abs(FVector2D::DotProduct(Delta, Axis));
                 if (Distance >= RadiusA + RadiusB - ContactTolerance)
                 {
-                    // Касание разрешено, как и в прежней проверке.
+                    // Касание разрешено.
                     return false;
                 }
             }
@@ -244,7 +244,7 @@ bool URICConstructionComponent::StartPreview(
 
     Mesh->SetStaticMesh(SourceMesh->GetStaticMesh());
 
-    // Копируем размер меша из Blueprint казармы.
+    // Масштаб меша из класса постройки.
     PreviewActor->SetActorScale3D(
         SourceMesh->GetRelativeScale3D());
 
@@ -319,6 +319,7 @@ bool URICConstructionComponent::StartPreview(
 void URICConstructionComponent::CancelPreview()
 {
     SetComponentTickEnabled(false);
+    bPreviewFrozen = false;
 
     bHasValidZonePosition = false;
 
@@ -361,7 +362,10 @@ void URICConstructionComponent::TickComponent(
         return;
     }
 
-    UpdatePreviewPosition();
+    if (!bPreviewFrozen)
+    {
+        UpdatePreviewPosition();
+    }
 }
 
 void URICConstructionComponent::UpdatePreviewPosition()
@@ -391,7 +395,12 @@ void URICConstructionComponent::UpdatePreviewPosition()
     FVector RayOrigin;
     FVector RayDirection;
 
-    if (!Controller->DeprojectMousePositionToWorld(
+    if (FixedGroundPosition.IsSet())
+    {
+        RayOrigin = FixedGroundPosition.GetValue() + FVector(0.0, 0.0, 100000.0);
+        RayDirection = -FVector::UpVector;
+    }
+    else if (!Controller->DeprojectMousePositionToWorld(
         RayOrigin,
         RayDirection)
         || FMath::Abs(RayDirection.Z) < 0.000001)
@@ -429,8 +438,12 @@ void URICConstructionComponent::UpdatePreviewPosition()
 
         FVector WantedCenter = CursorOnPlane;
 
-        WantedCenter.X += PreviewCenterOffset.X;
-        WantedCenter.Y += PreviewCenterOffset.Y;
+        // Сохранённая точка — центр основания, независимо от pivot меша.
+        if (!FixedGroundPosition.IsSet())
+        {
+            WantedCenter.X += PreviewCenterOffset.X;
+            WantedCenter.Y += PreviewCenterOffset.Y;
+        }
 
         FVector ValidCenter;
 
@@ -447,6 +460,15 @@ void URICConstructionComponent::UpdatePreviewPosition()
             ValidCenter.X - PreviewCenterOffset.X,
             ValidCenter.Y - PreviewCenterOffset.Y,
             ZoneZ + PreviewHeightOffset);
+
+        // Выбранная башня должна помещаться без сдвига сохранённого центра.
+        if (FixedGroundPosition.IsSet()
+            && (!FVector2D(ValidCenter.X, ValidCenter.Y).Equals(
+                FVector2D(FixedGroundPosition->X, FixedGroundPosition->Y), 0.01)
+                || !FMath::IsNearlyEqual(ZoneZ, FixedGroundPosition->Z, 0.01)))
+        {
+            continue;
+        }
 
         const double DX =
             CandidateLocation.X - CursorOnPlane.X;
@@ -548,9 +570,49 @@ bool URICConstructionComponent::HasBuildingOverlap(
     return false;
 }
 
+bool URICConstructionComponent::FreezePreview(FVector& OutGroundPosition)
+{
+    if (bPreviewFrozen || !HasValidZonePosition() || SelectedType == ERICBuildingType::Barrier)
+    {
+        return false;
+    }
+    OutGroundPosition = PreviewActor->GetActorLocation();
+    OutGroundPosition.X += PreviewCenterOffset.X;
+    OutGroundPosition.Y += PreviewCenterOffset.Y;
+    OutGroundPosition.Z -= PreviewHeightOffset;
+    bPreviewFrozen = true;
+    SetComponentTickEnabled(false);
+    PreviewActor->SetActorHiddenInGame(true);
+    return true;
+}
+
+bool URICConstructionComponent::TryPlaceAt(
+    TSubclassOf<ARICBuilding> BuildingClass, const FVector& GroundPosition)
+{
+    if (!bPreviewFrozen || GroundPosition.ContainsNaN())
+    {
+        return false;
+    }
+    TGuardValue<TOptional<FVector>> FixedPositionGuard(
+        FixedGroundPosition, TOptional<FVector>(GroundPosition));
+    if (!StartPreview(BuildingClass))
+    {
+        return RejectPlacement(NSLOCTEXT("Construction", "PreviewFailed", "Cannot create the selected building preview."));
+    }
+    SetComponentTickEnabled(false);
+    PreviewActor->SetActorHiddenInGame(true);
+    return TryPlacePreview();
+}
+
+bool URICConstructionComponent::RejectPlacement(const FText& Reason)
+{
+    OnPlacementRejected.Broadcast(Reason);
+    return false;
+}
+
 bool URICConstructionComponent::TryPlacePreview()
 {
-    if (!IsBuildingMode() || !SelectedBuildingClass)
+    if (bPreviewFrozen || !IsBuildingMode() || !SelectedBuildingClass)
     {
         return false;
     }
@@ -692,7 +754,7 @@ bool URICConstructionComponent::TryPlacePreview()
             Warning,
             TEXT("Construction rejected: no valid zone position."));
 
-        return false;
+        return RejectPlacement(NSLOCTEXT("Construction", "Rejected0", "No valid build zone at the selected position."));
     }
     const ARICBuilding* BuildingDefaults =
         SelectedBuildingClass.GetDefaultObject();
@@ -709,7 +771,7 @@ bool URICConstructionComponent::TryPlacePreview()
             TEXT("Construction rejected: missing building defaults or money component.")
         );
 
-        return false;
+        return RejectPlacement(NSLOCTEXT("Construction", "Rejected1", "Building class or money component is missing."));
     }
 
     const int32 Cost = BuildingDefaults->ConstructionCost;
@@ -724,7 +786,7 @@ bool URICConstructionComponent::TryPlacePreview()
             Money->CurrentMoney
         );
 
-        return false;
+        return RejectPlacement(NSLOCTEXT("Construction", "Rejected2", "Not enough gold."));
     }
 
     UWorld* World = GetWorld();
@@ -734,7 +796,7 @@ bool URICConstructionComponent::TryPlacePreview()
 
     if (!World || !PreviewMesh || !PreviewMesh->GetStaticMesh())
     {
-        return false;
+        return RejectPlacement(NSLOCTEXT("Construction", "Rejected3", "The selected building mesh is missing."));
     }
 
     if (HasBuildingOverlap(PreviewMesh, PreviewMesh->GetComponentTransform()))
@@ -744,7 +806,7 @@ bool URICConstructionComponent::TryPlacePreview()
             Warning,
             TEXT("Construction rejected: overlaps another building."));
 
-        return false;
+        return RejectPlacement(NSLOCTEXT("Construction", "Rejected4", "The position overlaps another building."));
     }
 
     const FTransform PlacementTransform =
@@ -773,7 +835,7 @@ bool URICConstructionComponent::TryPlacePreview()
             Warning,
             TEXT("Construction rejected: could not spawn building."));
 
-        return false;
+        return RejectPlacement(NSLOCTEXT("Construction", "Rejected5", "Could not create the building."));
     }
 
     // Устанавливаем тот же масштаб и позицию, что были у превью.
@@ -791,7 +853,7 @@ bool URICConstructionComponent::TryPlacePreview()
             Warning,
             TEXT("Construction rejected: spawned building has no mesh."));
 
-        return false;
+        return RejectPlacement(NSLOCTEXT("Construction", "Rejected6", "The building has no mesh."));
     }
 
     // Повторно проверяем реальный объект:
@@ -812,7 +874,7 @@ bool URICConstructionComponent::TryPlacePreview()
             Warning,
             TEXT("Construction rejected: invalid building dimensions."));
 
-        return false;
+        return RejectPlacement(NSLOCTEXT("Construction", "Rejected7", "Invalid building dimensions."));
     }
 
     const FVector2D ActualHalfSize(
@@ -873,7 +935,7 @@ bool URICConstructionComponent::TryPlacePreview()
             Warning,
             TEXT("Construction rejected: spawned building does not fit."));
 
-        return false;
+        return RejectPlacement(NSLOCTEXT("Construction", "Rejected8", "The building does not fit at the selected position."));
     }
     if (!Money->TrySpend(Cost))
     {
@@ -885,7 +947,7 @@ bool URICConstructionComponent::TryPlacePreview()
             TEXT("Construction rejected: payment failed.")
         );
 
-        return false;
+        return RejectPlacement(NSLOCTEXT("Construction", "Rejected9", "Payment failed."));
     }
     UE_LOG(
         LogTemp,

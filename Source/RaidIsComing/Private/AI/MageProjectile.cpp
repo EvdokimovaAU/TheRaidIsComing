@@ -70,9 +70,7 @@ namespace
     }
 }
 
-// ==========================================
 // CONSTRUCTOR
-// ==========================================
 
 AMageProjectile::AMageProjectile()
 {
@@ -89,18 +87,14 @@ AMageProjectile::AMageProjectile()
     InitialLifeSpan = 10.0f;
 }
 
-// ==========================================
 // BEGIN PLAY
-// ==========================================
 
 void AMageProjectile::BeginPlay()
 {
     Super::BeginPlay();
 }
 
-// ==========================================
 // INITIALIZATION
-// ==========================================
 
 void AMageProjectile::InitializeProjectile(
     AAIBase* NewTarget,
@@ -129,9 +123,7 @@ void AMageProjectile::InitializeProjectile(
     bInitialized = true;
 }
 
-// ==========================================
 // MOVEMENT
-// ==========================================
 
 void AMageProjectile::Tick(float DeltaTime)
 {
@@ -190,9 +182,7 @@ void AMageProjectile::Tick(float DeltaTime)
     }
 }
 
-// ==========================================
 // HIT
-// ==========================================
 
 void AMageProjectile::HitTarget()
 {
@@ -220,9 +210,7 @@ void AMageProjectile::HitTarget()
     Destroy();
 }
 
-// ==========================================
 // SPLASH DAMAGE
-// ==========================================
 
 void AMageProjectile::ApplySplashDamage(
     const FVector& ImpactLocation)

@@ -6,6 +6,7 @@
 #include "Templates/SubclassOf.h"
 #include "GameFramework/PlayerController.h"
 #include "RaidIsComingPlayerController.generated.h"
+class URICBuildMenuWidget;
 class URICMoneyComponent;
 class AWaveManager;
 
@@ -67,7 +68,7 @@ protected:
     float FollowTime = 0.0f;
 
     bool bSuppressDestinationUntilRelease = false;
-    bool bWaitingForBuildingSelection = false;
+
 
     virtual void BeginPlay() override;
     virtual void SetupInputComponent() override;
@@ -77,7 +78,6 @@ protected:
 
     void EnterConstructionMode();
     void StartArcherTowerPreview();
-    void StartMageTowerPreview();
     void StartBarrierPreview();
 
     void StartTowerPreview(TSubclassOf<ARICBuilding> BuildingClass);
@@ -90,4 +90,25 @@ protected:
     void OnTouchReleased();
 
     void UpdateCachedDestination();
+    virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+
+    UPROPERTY(EditDefaultsOnly, Category = "Construction|Menu")
+    TSubclassOf<URICBuildMenuWidget> BuildMenuWidgetClass;
+
+private:
+    UPROPERTY(Transient)
+    TObjectPtr<URICBuildMenuWidget> BuildMenuWidget;
+    TOptional<FVector> PendingBuildPosition;
+    bool bConstructionModeActive = false;
+    bool bBarrierPreview = false;
+    bool bResolvingBuildMenu = false;
+    void OpenBuildMenu();
+    void CloseBuildMenu();
+    void PositionBuildMenu();
+    UFUNCTION()
+    void HandleTowerSelected(bool bMageTower);
+    UFUNCTION()
+    void HandleMenuCancelled();
+    UFUNCTION()
+    void HandlePlacementRejected(const FText& Reason);
 };

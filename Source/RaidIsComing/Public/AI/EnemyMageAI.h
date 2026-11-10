@@ -35,9 +35,7 @@ public:
     virtual void MoveToTarget() override;
     virtual void Die() override;
 
-    // ==========================================
     // MAGIC SETTINGS
-    // ==========================================
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AI|Magic")
     float AllyDetectionRadius = 800.f;
@@ -57,9 +55,7 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AI|Magic")
     TSubclassOf<AEnemyBarrier> BarrierClass;
 
-    // ==========================================
     // ANIMATION
-    // ==========================================
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AI|Animation")
     TObjectPtr<UAnimMontage> BarrierMontage = nullptr;
@@ -77,9 +73,7 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AI|Magic", meta = (ClampMin = "0.0"))
     float CapitolRecruitmentExclusionDistance = 350.f;
 
-    // ==========================================
     // BARRIER STATE
-    // ==========================================
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AI|Magic")
     TObjectPtr<AEnemyBarrier> ActiveBarrier = nullptr;
@@ -90,9 +84,7 @@ public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AI|Magic")
     TArray<TObjectPtr<AEnemyAI>> AlliesAhead;
 
-    // ==========================================
     // MOVEMENT SETTINGS
-    // ==========================================
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AI|Movement")
     float FollowDistance = 120.f;
@@ -131,9 +123,7 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AI|Movement")
     float EscortMinSwordsmanSpeed = 80.f;
 
-    // ==========================================
     // COMBAT SETTINGS
-    // ==========================================
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AI|Combat")
     float WallDetectionRadius = 220.f;
@@ -144,9 +134,7 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AI|Combat", meta = (ClampMin = "0.0", ClampMax = "100.0"))
     float SoloWallAttackChance = 50.f;
 
-    // ==========================================
     // PUBLIC METHODS
-    // ==========================================
 
     UFUNCTION(BlueprintCallable, Category = "AI|Magic")
     void FindAlliesAhead();
@@ -223,18 +211,14 @@ private:
     float MeetingProgress = 0.f;
     bool bApproachingMeeting = false;
 
-    // ==========================================
     // TIMERS
-    // ==========================================
 
     FTimerHandle BehaviorTimer;
     FTimerHandle BarrierSpawnTimer;
     FTimerHandle BarrierCastEndTimer;
     FTimerHandle AttackTimer;
 
-    // ==========================================
     // ESCORT GROUP
-    // ==========================================
 
     TArray<TWeakObjectPtr<AEnemySwordsmanAI>> EscortGroup;
 
@@ -246,9 +230,7 @@ private:
 
     TWeakObjectPtr<ARICBuilding> CombatTarget;
 
-    // ==========================================
     // INTERNAL STATES
-    // ==========================================
 
     bool bCastingBarrier = false;
     bool bRemovingBarrier = false;
@@ -277,9 +259,7 @@ private:
     float NextBarrierTime = 0.f;
     float CurrentDesiredSpeed = 250.f;
 
-    // ==========================================
     // SPEED CONTROL
-    // ==========================================
 
     TWeakObjectPtr<AEnemySwordsmanAI> SpeedControlledSwordsman;
 
@@ -290,15 +270,11 @@ private:
     void RestoreAllEscortSpeeds();
     void RestoreSwordsmanSpeed();
 
-    // ==========================================
     // MAIN BEHAVIOR
-    // ==========================================
 
     void UpdateBehavior();
 
-    // ==========================================
     // ALLY MANAGEMENT
-    // ==========================================
 
     void RefreshEscortGroup();
 
@@ -314,9 +290,7 @@ private:
 
     AEnemySwordsmanAI* FindFollowTarget() const;
 
-    // ==========================================
     // MOVEMENT
-    // ==========================================
 
     void UpdateMovement();
 
@@ -329,9 +303,7 @@ private:
 
     void ResetMovementRequest();
 
-    // ==========================================
     // GROUP COMBAT
-    // ==========================================
 
     bool AreProtectedAlliesAttacking() const;
 
@@ -364,9 +336,7 @@ private:
     TWeakObjectPtr<ARICBuilding> EscortStagingWall;
     float NextWallNavRetryTime = 0.f;
 
-    // ==========================================
     // COMBAT
-    // ==========================================
 
     void UpdateCombat();
 
@@ -378,9 +348,7 @@ private:
 
     void PerformAttack();
 
-    // ==========================================
     // BARRIER
-    // ==========================================
 
     void SpawnBarrierInternal();
 
@@ -392,9 +360,7 @@ private:
 
     void UpdateBarrierState();
 
-    // ==========================================
     // HELPERS
-    // ==========================================
 
     bool IsSwordsman(const AEnemyAI* Enemy) const;
 };

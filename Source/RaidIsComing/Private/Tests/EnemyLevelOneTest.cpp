@@ -42,9 +42,7 @@ public:
                 // paired wave rather than assuming wave one always has a mage.
                 if (PairWave == INDEX_NONE)
                 {
-                    // Only the PIE duplicate is changed. A designer may remove
-                    // paired enemies from all normal waves without invalidating
-                    // this scenario's spawner/animation regression coverage.
+                    // Добавляем пару во временную PIE-копию волны.
                     for (int32 Index = 0; Index < It->Waves.Num() && PairWave == INDEX_NONE; ++Index)
                         for (auto& Group : It->Waves[Index].SpawnGroups)
                             if (IsValid(Group.SpawnPoint.Get()))
@@ -52,7 +50,7 @@ public:
                                 Group.SwordsmanCount = FMath::Max(1, Group.SwordsmanCount);
                                 Group.MageCount = FMath::Max(1, Group.MageCount);
                                 PairWave = Index;
-                                Test->AddInfo(TEXT("Added escort pair only to temporary PIE wave; level/wave assets remain unchanged"));
+                                Test->AddInfo(TEXT("Added escort pair to test wave"));
                                 break;
                             }
                     if (PairWave == INDEX_NONE)

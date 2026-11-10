@@ -42,9 +42,7 @@ void AEnemyMageAI::OnCombatNavigationChanged(ANavigationData* NavData)
     SoloAvoidedWall.Reset();
 }
 
-// ==========================================
 // CONSTRUCTOR
-// ==========================================
 
 AEnemyMageAI::AEnemyMageAI()
 {
@@ -57,9 +55,7 @@ AEnemyMageAI::AEnemyMageAI()
     WallAttackDistance = 135.f;
 }
 
-// ==========================================
 // BALANCE
-// ==========================================
 
 void AEnemyMageAI::ApplyEnemyBalance()
 {
@@ -104,9 +100,7 @@ void AEnemyMageAI::ApplyEnemyBalance()
     CurrentDesiredSpeed = NormalMovementSpeed;
 }
 
-// ==========================================
 // BEGIN PLAY
-// ==========================================
 
 void AEnemyMageAI::BeginPlay()
 {
@@ -153,9 +147,7 @@ void AEnemyMageAI::Tick(float DeltaSeconds)
     // Obstacle navigation belongs to BehaviorTimer, never to Tick.
 }
 
-// ==========================================
 // ALLY SEARCH
-// ==========================================
 
 bool AEnemyMageAI::IsSwordsman(const AEnemyAI* Enemy) const
 {
@@ -173,9 +165,7 @@ void AEnemyMageAI::FindAlliesAhead()
             AlliesAhead.Add(*It);
 }
 
-// ==========================================
 // ESCORT GROUP
-// ==========================================
 
 bool AEnemyMageAI::IsAllyOnRoute(const AEnemySwordsmanAI* Ally) const
 {
@@ -350,9 +340,7 @@ void AEnemyMageAI::ReleaseEscortGroup()
     ResetMovementRequest();
 }
 
-// ==========================================
 // WAITING DURING CAST
-// ==========================================
 
 void AEnemyMageAI::StopNearbySwordsmen()
 {
@@ -396,9 +384,7 @@ void AEnemyMageAI::ReleaseWaitingSwordsmen()
     WaitingSwordsmen.Empty();
 }
 
-// ==========================================
 // GROUP COMBAT
-// ==========================================
 
 bool AEnemyMageAI::AreProtectedAlliesAttacking() const
 {
@@ -424,9 +410,7 @@ void AEnemyMageAI::UpdateGroupCombatState()
     // UpdateCombat/UpdateObstacleAction own animated barrier removal.
 }
 
-// ==========================================
 // BARRIER
-// ==========================================
 
 bool AEnemyMageAI::HasActiveBarrier() const
 {
@@ -688,9 +672,7 @@ void AEnemyMageAI::UpdateBarrierState()
     }
 }
 
-// ==========================================
 // COMBAT
-// ==========================================
 
 ARICBuilding* AEnemyMageAI::FindCombatTarget() const
 {
@@ -1224,9 +1206,7 @@ void AEnemyMageAI::UpdateCombat()
     }
 }
 
-// ==========================================
 // MOVEMENT REQUEST
-// ==========================================
 
 void AEnemyMageAI::ResetMovementRequest()
 {
@@ -1335,9 +1315,7 @@ void AEnemyMageAI::RequestMoveToActor(AActor* MoveTarget, float InAcceptanceRadi
         UE_LOG(LogTemp, Log, TEXT("[Mage] Route rebuilt to %s: %s"), *GetNameSafe(MoveTarget), *Destination.ToString());
 }
 
-// ==========================================
 // SPEED CONTROL
-// ==========================================
 
 void AEnemyMageAI::RestoreAllEscortSpeeds()
 {
@@ -1511,9 +1489,7 @@ void AEnemyMageAI::UpdateFollowSpeed(float DeltaTime)
     );
 }
 
-// ==========================================
 // MOVEMENT
-// ==========================================
 
 void AEnemyMageAI::UpdateMovement()
 {
@@ -1558,9 +1534,7 @@ void AEnemyMageAI::MoveToTarget()
     UpdateMovement();
 }
 
-// ==========================================
 // MAIN BEHAVIOR
-// ==========================================
 
 void AEnemyMageAI::UpdateBehavior()
 {
@@ -1667,9 +1641,7 @@ void AEnemyMageAI::UpdateBehavior()
     }
 }
 
-// ==========================================
 // DEATH AND CLEANUP
-// ==========================================
 
 void AEnemyMageAI::Die()
 {

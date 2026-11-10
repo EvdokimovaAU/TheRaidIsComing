@@ -13,9 +13,7 @@
 #include "EngineUtils.h"
 #include "TimerManager.h"
 
-// ==========================================
 // CONSTRUCTOR
-// ==========================================
 
 AEnemyTorchbearerAI::AEnemyTorchbearerAI()
 {
@@ -62,9 +60,7 @@ void AEnemyTorchbearerAI::ApplyEnemyBalance()
 }
 
 
-// ==========================================
 // BEGIN PLAY
-// ==========================================
 
 void AEnemyTorchbearerAI::BeginPlay()
 {
@@ -83,9 +79,7 @@ void AEnemyTorchbearerAI::BeginPlay()
         *GetName());
 }
 
-// ==========================================
 // BURNING COMPONENT
-// ==========================================
 
 UBurningComponent*
 AEnemyTorchbearerAI::GetBurningComponent(
@@ -96,9 +90,7 @@ AEnemyTorchbearerAI::GetBurningComponent(
         : nullptr;
 }
 
-// ==========================================
 // DISTANCE TO BUILDING BOUNDS
-// ==========================================
 
 float AEnemyTorchbearerAI::GetDistanceToBuilding(
     const ARICBuilding* Building) const
@@ -141,9 +133,7 @@ float AEnemyTorchbearerAI::GetDistanceToBuilding(
     );
 }
 
-// ==========================================
 // FIND WALL AHEAD
-// ==========================================
 
 ARICBuilding*
 AEnemyTorchbearerAI::FindWallAhead() const
@@ -233,9 +223,7 @@ AEnemyTorchbearerAI::FindWallAhead() const
     return BestWall;
 }
 
-// ==========================================
 // UPDATE BEHAVIOR
-// ==========================================
 
 void AEnemyTorchbearerAI::UpdateBehavior()
 {
@@ -288,9 +276,7 @@ void AEnemyTorchbearerAI::UpdateBehavior()
         return;
     }
 
-    // --------------------------------------
     // CAPITOL
-    // --------------------------------------
 
     ARICBuilding* CapitolBuilding =
         Cast<ARICBuilding>(Capitol.Get());
@@ -313,9 +299,7 @@ void AEnemyTorchbearerAI::UpdateBehavior()
         }
     }
 
-    // --------------------------------------
     // WALL
-    // --------------------------------------
 
     if (ARICBuilding* Wall = FindWallAhead())
     {
@@ -328,9 +312,7 @@ void AEnemyTorchbearerAI::UpdateBehavior()
     }
 }
 
-// ==========================================
 // START IGNITION
-// ==========================================
 
 void AEnemyTorchbearerAI::StartIgnition(
     ARICBuilding* Building)
@@ -406,9 +388,7 @@ void AEnemyTorchbearerAI::StartIgnition(
     );
 }
 
-// ==========================================
 // COMPLETE IGNITION
-// ==========================================
 
 void AEnemyTorchbearerAI::CompleteIgnition()
 {
@@ -497,9 +477,7 @@ void AEnemyTorchbearerAI::CompleteIgnition()
     }
 }
 
-// ==========================================
 // RESUME MOVEMENT
-// ==========================================
 
 void AEnemyTorchbearerAI::ResumeMovement()
 {
@@ -515,9 +493,7 @@ void AEnemyTorchbearerAI::ResumeMovement()
     MoveToTarget();
 }
 
-// ==========================================
 // CANCEL IGNITION
-// ==========================================
 
 void AEnemyTorchbearerAI::CancelIgnition()
 {
@@ -543,9 +519,7 @@ void AEnemyTorchbearerAI::CancelIgnition()
     }
 }
 
-// ==========================================
 // MOVE TO TARGET
-// ==========================================
 
 void AEnemyTorchbearerAI::MoveToTarget()
 {
@@ -559,9 +533,7 @@ void AEnemyTorchbearerAI::MoveToTarget()
     Super::MoveToTarget();
 }
 
-// ==========================================
 // DIE
-// ==========================================
 
 void AEnemyTorchbearerAI::Die()
 {
@@ -578,9 +550,7 @@ void AEnemyTorchbearerAI::Die()
     Super::Die();
 }
 
-// ==========================================
 // END PLAY
-// ==========================================
 
 void AEnemyTorchbearerAI::EndPlay(
     const EEndPlayReason::Type EndPlayReason)
