@@ -10,6 +10,7 @@
 #include "EngineUtils.h"
 #include "Construction/RICConstructionComponent.h"
 #include "Construction/RICMoneyComponent.h"
+#include "Construction/RICPassage.h"
 
 #include "Blueprint/AIBlueprintHelperLibrary.h"
 #include "Components/InputComponent.h"
@@ -71,6 +72,7 @@ void ARaidIsComingPlayerController::OnConstructionClick()
         {
             bConstructionModeActive = false;
             bBarrierPreview = false;
+            ConstructionComponent->SetPreviewHighlightTarget(nullptr);
         }
         return;
     }
@@ -92,19 +94,6 @@ void ARaidIsComingPlayerController::SetupInputComponent()
         this,
         &ARaidIsComingPlayerController::StartNextWaveFromInput);
 
-    InputComponent->BindKey(
-        EKeys::E,
-        IE_Pressed,
-        this,
-        &ARaidIsComingPlayerController::EnterConstructionMode
-    );
-
-    InputComponent->BindKey(
-        EKeys::Three,
-        IE_Pressed,
-        this,
-        &ARaidIsComingPlayerController::StartBarrierPreview);
-
     // Отмена строительства.
     InputComponent->BindKey(
         EKeys::RightMouseButton,
@@ -120,7 +109,7 @@ void ARaidIsComingPlayerController::SetupInputComponent()
             EKeys::LeftMouseButton,
             IE_Pressed,
             this,
-            &ARaidIsComingPlayerController::OnConstructionClick
+            &ARaidIsComingPlayerController::OnMouseInputStarted
         ).bConsumeInput = false;
     }
 
@@ -165,7 +154,7 @@ void ARaidIsComingPlayerController::SetupInputComponent()
             SetDestinationClickAction,
             ETriggerEvent::Started,
             this,
-            &ARaidIsComingPlayerController::OnInputStarted
+            &ARaidIsComingPlayerController::OnMouseInputStarted
         );
 
         EnhancedInputComponent->BindAction(
@@ -231,35 +220,72 @@ void ARaidIsComingPlayerController::SetupInputComponent()
     }
 }
 
-void ARaidIsComingPlayerController::EnterConstructionMode()
+void ARaidIsComingPlayerController::OnMouseInputStarted()
 {
-    if (!ConstructionComponent || !GetWorld())
+    if (bResolvingBuildMenu)
     {
+        return;
+    }
+    if (BuildMenuWidget)
+    {
+        CloseBuildMenu();
+        StartArcherTowerPreview();
         return;
     }
 
-    if (bConstructionModeActive)
+    if (ConstructionComponent && !bConstructionModeActive && !ConstructionComponent->IsBuildingMode())
     {
-        CloseBuildMenu();
-        bConstructionModeActive = false;
-        bBarrierPreview = false;
-        ConstructionComponent->CancelPreview();
-        return;
+        AActor* Target = ConstructionComponent->GetConstructionTargetUnderCursor(
+            ArcherTowerClass, BarrierClass);
+        if (Target)
+        {
+            ConstructionComponent->SetPreviewHighlightTarget(Target);
+            if (Target->IsA<ARICPassage>())
+            {
+                StartBarrierPreview();
+            }
+            else
+            {
+                StartArcherTowerPreview();
+            }
+
+            if (bConstructionModeActive)
+            {
+                return;
+            }
+
+            bBarrierPreview = false;
+            ConstructionComponent->SetPreviewHighlightTarget(nullptr);
+        }
     }
-    bConstructionModeActive = true;
-    StartArcherTowerPreview();
+
+    if (SetDestinationClickAction && DefaultMappingContext)
+    {
+        OnInputStarted();
+    }
+    else
+    {
+        OnConstructionClick();
+    }
 }
 
 void ARaidIsComingPlayerController::CancelBuildingPreview()
 {
+    if (bResolvingBuildMenu)
+    {
+        return;
+    }
     if (BuildMenuWidget)
     {
-        HandleMenuCancelled();
-        return;
+        CloseBuildMenu();
     }
     bConstructionModeActive = false;
     bBarrierPreview = false;
-    if (ConstructionComponent) ConstructionComponent->CancelPreview();
+    if (ConstructionComponent)
+    {
+        ConstructionComponent->CancelPreview();
+        ConstructionComponent->SetPreviewHighlightTarget(nullptr);
+    }
 }
 
 void ARaidIsComingPlayerController::OnInputStarted()
@@ -534,7 +560,9 @@ void ARaidIsComingPlayerController::CloseBuildMenu()
         BuildMenuWidget->OnCancelled.RemoveAll(this);
         BuildMenuWidget->RemoveFromParent();
         BuildMenuWidget = nullptr;
-        SetInputMode(FInputModeGameOnly());
+        FInputModeGameOnly Mode;
+        Mode.SetConsumeCaptureMouseDown(false);
+        SetInputMode(Mode);
         bShowMouseCursor = true;
     }
     PendingBuildPosition.Reset();
@@ -554,9 +582,10 @@ void ARaidIsComingPlayerController::HandleTowerSelected(bool bMageTower)
 
 void ARaidIsComingPlayerController::HandleMenuCancelled()
 {
-    if (!BuildMenuWidget || bResolvingBuildMenu) return;
-    CloseBuildMenu();
-    if (bConstructionModeActive) StartArcherTowerPreview();
+    if (BuildMenuWidget)
+    {
+        CancelBuildingPreview();
+    }
 }
 
 void ARaidIsComingPlayerController::HandlePlacementRejected(const FText& Reason)

@@ -76,7 +76,6 @@ protected:
     void StartNextWaveFromInput();
     TWeakObjectPtr<AWaveManager> CachedWaveManager;
 
-    void EnterConstructionMode();
     void StartArcherTowerPreview();
     void StartBarrierPreview();
 
@@ -84,6 +83,7 @@ protected:
     void CancelBuildingPreview();
 
     void OnInputStarted();
+    void OnMouseInputStarted();
     void OnSetDestinationTriggered();
     void OnSetDestinationReleased();
     void OnTouchTriggered();

@@ -47,6 +47,11 @@ bool FRICBuildMenuPlacementTest::RunTest(const FString& Parameters)
     };
     Defaults->ConstructionCost = 73;
     Zone->HalfSize = FVector2D(10000.0, 10000.0);
+    ARICBuildZone* OtherZone = World->SpawnActor<ARICBuildZone>(
+        FVector(50000.0, 0.0, 0.0), FRotator::ZeroRotator);
+    if (!TestNotNull(TEXT("Other build zone"), OtherZone)) return false;
+    OtherZone->HalfSize = Zone->HalfSize;
+    Construction->SetPreviewHighlightTarget(Zone);
 
     FVector Ground(125.0, -80.0, 0.0);
     auto BeginFrozenSelection = [&]()
@@ -62,6 +67,8 @@ bool FRICBuildMenuPlacementTest::RunTest(const FString& Parameters)
         return true;
     };
     if (!TestTrue(TEXT("Open selection"), BeginFrozenSelection())) return false;
+    TestTrue(TEXT("Clicked zone highlighted"), Zone->HighlightMesh->IsVisible());
+    TestFalse(TEXT("Other zone stays hidden"), OtherZone->HighlightMesh->IsVisible());
     Construction->TickComponent(0.016f, LEVELTICK_All, nullptr);
     TestTrue(TEXT("Tick cannot reveal frozen preview"), Construction->PreviewActor->IsHidden());
     TestTrue(TEXT("Place via existing pipeline"), Construction->TryPlaceAt(TowerClass, Ground));
@@ -101,7 +108,13 @@ bool FRICBuildMenuPlacementTest::RunTest(const FString& Parameters)
     TestTrue(TEXT("Select then cancel"), BeginFrozenSelection());
     Construction->CancelPreview();
     TestFalse(TEXT("Cancel deletes preview"), Construction->IsBuildingMode());
+    TestFalse(TEXT("Cancel hides the clicked zone"), Zone->HighlightMesh->IsVisible());
     TestEqual(TEXT("Cancel does not charge"), Money->CurrentMoney, 1000);
+
+    TestTrue(TEXT("Select before trying a different build zone"), BeginFrozenSelection());
+    TestFalse(TEXT("Placement outside the clicked zone rejected"),
+        Construction->TryPlaceAt(TowerClass, OtherZone->GetActorLocation()));
+    TestEqual(TEXT("Placement in the other zone does not charge"), Money->CurrentMoney, 1000);
 
     UClass* MageClass = LoadClass<ARICBuilding>(nullptr,
         TEXT("/Game/Blueprints/Buildings/BP_MageTower.BP_MageTower_C"));
