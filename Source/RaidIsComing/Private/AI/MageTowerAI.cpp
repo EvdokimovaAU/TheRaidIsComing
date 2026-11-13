@@ -33,7 +33,7 @@ void AMageTowerAI::BeginPlay()
         AGameBalanceManager::GetBalanceManager(this))
     {
         const FTowerBalanceSettings& Settings =
-            Balance->ArcherTower;
+            Balance->MageTower;
 
         MaxHP = FMath::Max(1.0f, Settings.MaxHealth);
         CurrentHP = MaxHP;
@@ -43,6 +43,7 @@ void AMageTowerAI::BeginPlay()
         DetectionRadius = AttackRange;
         AttackCooldown = FMath::Max(0.01f, Settings.AttackCooldown);
         TargetCheckInterval = FMath::Max(0.01f, Settings.TargetCheckInterval);
+        SplashRadius = FMath::Max(0.0f, Settings.SplashRadius);
     }
 
     UWorld* World = GetWorld();

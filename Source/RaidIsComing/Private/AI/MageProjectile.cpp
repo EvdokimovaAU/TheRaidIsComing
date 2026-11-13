@@ -244,7 +244,7 @@ void AMageProjectile::ApplySplashDamage(
             Enemy->GetActorLocation()
         );
 
-        if (Distance > ProjectileSplashRadius)
+        if (Enemy != TargetActor.Get() && Distance > ProjectileSplashRadius)
         {
             continue;
         }

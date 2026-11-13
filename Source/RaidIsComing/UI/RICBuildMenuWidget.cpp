@@ -26,9 +26,9 @@ void URICBuildMenuWidget::RefreshCosts(
     const ARICBuilding* Archer = ArcherClass.GetDefaultObject();
     const ARICBuilding* Mage = MageClass.GetDefaultObject();
     if (Text_ArcherTower)
-        Text_ArcherTower->SetText(Archer ? FText::AsNumber(Archer->ConstructionCost) : FText::GetEmpty());
+        Text_ArcherTower->SetText(Archer ? FText::AsNumber(Archer->GetConstructionCost(this)) : FText::GetEmpty());
     if (Text_MageTower)
-        Text_MageTower->SetText(Mage ? FText::AsNumber(Mage->ConstructionCost) : FText::GetEmpty());
+        Text_MageTower->SetText(Mage ? FText::AsNumber(Mage->GetConstructionCost(this)) : FText::GetEmpty());
     if (Button_ArcherTower) Button_ArcherTower->SetIsEnabled(Archer != nullptr);
     if (Button_MageTower) Button_MageTower->SetIsEnabled(Mage != nullptr);
 }

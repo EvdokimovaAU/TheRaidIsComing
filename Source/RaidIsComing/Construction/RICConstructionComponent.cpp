@@ -758,7 +758,7 @@ bool URICConstructionComponent::TryPlacePreview()
             return false;
         }
 
-        const int32 Cost = Defaults->ConstructionCost;
+        const int32 Cost = Defaults->GetConstructionCost(this);
         if (!Money->CanAfford(Cost))
         {
             UE_LOG(LogTemp, Warning,
@@ -889,7 +889,7 @@ bool URICConstructionComponent::TryPlacePreview()
         return RejectPlacement(NSLOCTEXT("Construction", "Rejected1", "Building class or money component is missing."));
     }
 
-    const int32 Cost = BuildingDefaults->ConstructionCost;
+    const int32 Cost = BuildingDefaults->GetConstructionCost(this);
 
     if (!Money->CanAfford(Cost))
     {

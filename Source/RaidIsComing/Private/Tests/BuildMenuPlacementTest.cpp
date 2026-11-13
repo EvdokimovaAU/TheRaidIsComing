@@ -2,6 +2,7 @@
 #include "Misc/AutomationTest.h"
 #include "Misc/ScopeExit.h"
 #include "Tests/AutomationEditorCommon.h"
+#include "AI/GameBalanceManager.h"
 #include "Construction/RICConstructionComponent.h"
 #include "Construction/RICBuilding.h"
 #include "Construction/RICBuildZone.h"
@@ -119,7 +120,18 @@ bool FRICBuildMenuPlacementTest::RunTest(const FString& Parameters)
     UClass* MageClass = LoadClass<ARICBuilding>(nullptr,
         TEXT("/Game/Blueprints/Buildings/BP_MageTower.BP_MageTower_C"));
     if (!TestNotNull(TEXT("Existing mage Blueprint"), MageClass)) return false;
-    const int32 MageCost = MageClass->GetDefaultObject<ARICBuilding>()->ConstructionCost;
+    AGameBalanceManager* Balance = World->SpawnActor<AGameBalanceManager>();
+    if (!TestNotNull(TEXT("Level balance manager"), Balance)) return false;
+    Balance->ArcherTower.BuildCost = 81;
+    Balance->MageTower.BuildCost = 142;
+    TestEqual(TEXT("Archer resolves the level price"), Defaults->GetConstructionCost(World), 81);
+    const int32 MageCost = Balance->MageTower.BuildCost;
+    TestEqual(TEXT("Mage resolves the level price"), MageClass->GetDefaultObject<ARICBuilding>()->GetConstructionCost(World),
+        MageCost);
+    Money->CurrentMoney = MageCost - 1;
+    if (!TestTrue(TEXT("Freeze selection before checking level price"), BeginFrozenSelection())) return false;
+    TestFalse(TEXT("Affordability uses the level price"), Construction->TryPlaceAt(MageClass, Ground));
+    TestEqual(TEXT("Rejected placement does not charge"), Money->CurrentMoney, MageCost - 1);
     Money->CurrentMoney = FMath::Max(1000, MageCost);
     const int32 BeforeMage = Money->CurrentMoney;
     TestTrue(TEXT("Freeze archer before selecting mage"), BeginFrozenSelection());
