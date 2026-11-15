@@ -24,9 +24,6 @@ void AWaveManager::BeginPlay()
     UE_LOG(LogTemp, Warning,
         TEXT("[WaveManager] Initialized. Total waves: %d"),
         Waves.Num());
-
-    UE_LOG(LogTemp, Log,
-        TEXT("[WaveManager] Preparation. Press Q to start wave 1."));
 }
 
 // END PLAY

@@ -9,6 +9,7 @@
 class URICBuildMenuWidget;
 class URICMoneyComponent;
 class AWaveManager;
+class URICStartAttackButton;
 
 class UNiagaraSystem;
 class UInputMappingContext;
@@ -73,8 +74,6 @@ protected:
     virtual void BeginPlay() override;
     virtual void SetupInputComponent() override;
     void OnConstructionClick();
-    void StartNextWaveFromInput();
-    TWeakObjectPtr<AWaveManager> CachedWaveManager;
 
     void StartArcherTowerPreview();
     void StartBarrierPreview();
@@ -96,6 +95,20 @@ protected:
     TSubclassOf<URICBuildMenuWidget> BuildMenuWidgetClass;
 
 private:
+    friend class URICStartAttackButton;
+
+    TWeakObjectPtr<AWaveManager> StartAttackWaveManager;
+    TWeakObjectPtr<URICStartAttackButton> StartAttackButton;
+    void RegisterStartAttackButton(URICStartAttackButton* Button);
+    void ClearStartAttackButton();
+    void SetGameplayInputMode(bool bAllowUI);
+
+    UFUNCTION()
+    void HandleStartAttackClicked();
+
+    UFUNCTION()
+    void HandleWaveStarted(int32 WaveNumber);
+
     UPROPERTY(Transient)
     TObjectPtr<URICBuildMenuWidget> BuildMenuWidget;
     TOptional<FVector> PendingBuildPosition;

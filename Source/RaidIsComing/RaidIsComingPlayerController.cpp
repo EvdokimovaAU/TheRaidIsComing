@@ -5,6 +5,7 @@
 
 #include "Construction/RICBuilding.h"
 #include "UI/RICBuildMenuWidget.h"
+#include "UI/RICStartAttackButton.h"
 #include "Blueprint/WidgetLayoutLibrary.h"
 #include "Engine/Engine.h"
 #include "EngineUtils.h"
@@ -87,12 +88,6 @@ void ARaidIsComingPlayerController::SetupInputComponent()
     {
         return;
     }
-
-    InputComponent->BindKey(
-        EKeys::Q,
-        IE_Pressed,
-        this,
-        &ARaidIsComingPlayerController::StartNextWaveFromInput);
 
     // Отмена строительства.
     InputComponent->BindKey(
@@ -458,42 +453,96 @@ void ARaidIsComingPlayerController::StartBarrierPreview()
     StartTowerPreview(BarrierClass);
 }
 
-void ARaidIsComingPlayerController::StartNextWaveFromInput()
+void ARaidIsComingPlayerController::RegisterStartAttackButton(URICStartAttackButton* Button)
 {
-    if (!IsLocalPlayerController() || !GetWorld())
+    if (!GetLocalPlayer() || !GetWorld())
     {
+        Button->SetVisibility(ESlateVisibility::Collapsed);
         return;
     }
 
-    if (!CachedWaveManager.IsValid())
+    AWaveManager* Manager = nullptr;
+    for (TActorIterator<AWaveManager> It(GetWorld()); It; ++It)
     {
-        AWaveManager* FoundManager = nullptr;
-        for (TActorIterator<AWaveManager> It(GetWorld()); It; ++It)
+        if (!IsValid(*It))
         {
-            if (!IsValid(*It))
-            {
-                continue;
-            }
-            if (FoundManager)
-            {
-                UE_LOG(LogTemp, Error,
-                    TEXT("Multiple WaveManagers found. Keep one manager on the level."));
-                return;
-            }
-            FoundManager = *It;
+            continue;
         }
-        CachedWaveManager = FoundManager;
+        if (Manager)
+        {
+            UE_LOG(LogTemp, Error,
+                TEXT("Multiple WaveManagers found. Keep one manager on the level."));
+            Button->SetVisibility(ESlateVisibility::Collapsed);
+            return;
+        }
+        Manager = *It;
     }
 
-    AWaveManager* Manager = CachedWaveManager.Get();
-    if (!IsValid(Manager))
+    if (!Manager || Manager->LevelPhase != ERICLevelPhase::Preparation ||
+        Manager->GetTotalWaves() == 0)
     {
-        UE_LOG(LogTemp, Warning,
-            TEXT("Q: WaveManager was not found on this level."));
+        Button->SetVisibility(ESlateVisibility::Collapsed);
         return;
     }
 
-    Manager->StartNextWave();
+    ClearStartAttackButton();
+    StartAttackWaveManager = Manager;
+    StartAttackButton = Button;
+    Manager->OnWaveStarted.AddUniqueDynamic(this, &ThisClass::HandleWaveStarted);
+    Button->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleStartAttackClicked);
+    Button->SetVisibility(ESlateVisibility::Visible);
+    SetGameplayInputMode(true);
+}
+
+void ARaidIsComingPlayerController::HandleStartAttackClicked()
+{
+    if (AWaveManager* Manager = StartAttackWaveManager.Get())
+    {
+        Manager->StartNextWave();
+    }
+}
+
+void ARaidIsComingPlayerController::HandleWaveStarted(int32)
+{
+    ClearStartAttackButton();
+    if (!BuildMenuWidget)
+    {
+        SetGameplayInputMode(false);
+    }
+}
+
+void ARaidIsComingPlayerController::ClearStartAttackButton()
+{
+    if (AWaveManager* Manager = StartAttackWaveManager.Get())
+    {
+        Manager->OnWaveStarted.RemoveDynamic(this, &ThisClass::HandleWaveStarted);
+    }
+    StartAttackWaveManager.Reset();
+
+    if (URICStartAttackButton* Button = StartAttackButton.Get())
+    {
+        Button->OnClicked.RemoveDynamic(this, &ThisClass::HandleStartAttackClicked);
+        Button->SetVisibility(ESlateVisibility::Collapsed);
+    }
+    StartAttackButton.Reset();
+}
+
+void ARaidIsComingPlayerController::SetGameplayInputMode(bool bAllowUI)
+{
+    if (bAllowUI)
+    {
+        FInputModeGameAndUI Mode;
+        Mode.SetHideCursorDuringCapture(false);
+        Mode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+        SetInputMode(Mode);
+    }
+    else
+    {
+        FInputModeGameOnly Mode;
+        Mode.SetConsumeCaptureMouseDown(false);
+        SetInputMode(Mode);
+    }
+    bShowMouseCursor = true;
 }
 
 void ARaidIsComingPlayerController::OpenBuildMenu()
@@ -519,11 +568,7 @@ void ARaidIsComingPlayerController::OpenBuildMenu()
     BuildMenuWidget->AddToViewport(10);
     PositionBuildMenu();
     if (!BuildMenuWidget) return;
-    FInputModeGameAndUI Mode;
-    Mode.SetHideCursorDuringCapture(false);
-    Mode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
-    SetInputMode(Mode);
-    bShowMouseCursor = true;
+    SetGameplayInputMode(true);
 }
 
 void ARaidIsComingPlayerController::PositionBuildMenu()
@@ -560,10 +605,7 @@ void ARaidIsComingPlayerController::CloseBuildMenu()
         BuildMenuWidget->OnCancelled.RemoveAll(this);
         BuildMenuWidget->RemoveFromParent();
         BuildMenuWidget = nullptr;
-        FInputModeGameOnly Mode;
-        Mode.SetConsumeCaptureMouseDown(false);
-        SetInputMode(Mode);
-        bShowMouseCursor = true;
+        SetGameplayInputMode(StartAttackButton.IsValid());
     }
     PendingBuildPosition.Reset();
     bSuppressDestinationUntilRelease = true;
@@ -595,6 +637,7 @@ void ARaidIsComingPlayerController::HandlePlacementRejected(const FText& Reason)
 
 void ARaidIsComingPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+    ClearStartAttackButton();
     CloseBuildMenu();
     Super::EndPlay(EndPlayReason);
 }
