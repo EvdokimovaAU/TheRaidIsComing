@@ -4,10 +4,14 @@
 #include "AI/WaveManager.h"
 
 #include "Construction/RICBuilding.h"
-#include "Construction/RICBuildZone.h"
+#include "UI/RICBuildMenuWidget.h"
+#include "UI/RICStartAttackButton.h"
+#include "Blueprint/WidgetLayoutLibrary.h"
+#include "Engine/Engine.h"
 #include "EngineUtils.h"
 #include "Construction/RICConstructionComponent.h"
 #include "Construction/RICMoneyComponent.h"
+#include "Construction/RICPassage.h"
 
 #include "Blueprint/AIBlueprintHelperLibrary.h"
 #include "Components/InputComponent.h"
@@ -49,65 +53,41 @@ ARaidIsComingPlayerController::ARaidIsComingPlayerController()
 void ARaidIsComingPlayerController::BeginPlay()
 {
     Super::BeginPlay();
-    UE_LOG(LogTemp, Warning,
-        TEXT("[RIC Input] BeginPlay Controller=%s Class=%s Local=%d"),
-        *GetName(), *GetNameSafe(GetClass()), IsLocalPlayerController());
+    ConstructionComponent->OnPlacementRejected.AddUniqueDynamic(this, &ThisClass::HandlePlacementRejected);
 }
 
 void ARaidIsComingPlayerController::OnConstructionClick()
 {
-    // Fallback for maps without the old point-and-click Input Action.
-    // Outside construction this handler does not move the camera pawn.
-    if (ConstructionComponent && ConstructionComponent->IsBuildingMode())
+    if (!ConstructionComponent || !bConstructionModeActive || bResolvingBuildMenu)
     {
-        const bool bPlaced = ConstructionComponent->TryPlacePreview();
-        UE_LOG(LogTemp, Warning, TEXT("[RIC Input] LMB placement=%d"), bPlaced);
+        return;
     }
+    if (BuildMenuWidget)
+    {
+        HandleMenuCancelled();
+        return;
+    }
+    if (bBarrierPreview)
+    {
+        if (ConstructionComponent->TryPlacePreview())
+        {
+            bConstructionModeActive = false;
+            bBarrierPreview = false;
+            ConstructionComponent->SetPreviewHighlightTarget(nullptr);
+        }
+        return;
+    }
+    OpenBuildMenu();
 }
 
 void ARaidIsComingPlayerController::SetupInputComponent()
 {
     Super::SetupInputComponent();
-    UE_LOG(LogTemp, Warning,
-        TEXT("[RIC Input] Setup Controller=%s Local=%d Input=%s"),
-        *GetName(), IsLocalPlayerController(), *GetNameSafe(InputComponent));
 
     if (!IsLocalPlayerController() || !InputComponent)
     {
         return;
     }
-
-    InputComponent->BindKey(
-        EKeys::Q,
-        IE_Pressed,
-        this,
-        &ARaidIsComingPlayerController::StartNextWaveFromInput);
-
-    // Вход в строительство без выбранной постройки.
-    InputComponent->BindKey(
-        EKeys::E,
-        IE_Pressed,
-        this,
-        &ARaidIsComingPlayerController::EnterConstructionMode
-    );
-
-    InputComponent->BindKey(
-        EKeys::One,
-        IE_Pressed,
-        this,
-        &ARaidIsComingPlayerController::StartArcherTowerPreview);
-
-    InputComponent->BindKey(
-        EKeys::Two,
-        IE_Pressed,
-        this,
-        &ARaidIsComingPlayerController::StartMageTowerPreview);
-
-    InputComponent->BindKey(
-        EKeys::Three,
-        IE_Pressed,
-        this,
-        &ARaidIsComingPlayerController::StartBarrierPreview);
 
     // Отмена строительства.
     InputComponent->BindKey(
@@ -117,17 +97,15 @@ void ARaidIsComingPlayerController::SetupInputComponent()
         &ARaidIsComingPlayerController::CancelBuildingPreview
     ).bConsumeInput = false;
 
-    // Diana's pawn also needs RMB for isRotate.
-    // Use one mouse placement path: fallback OR the existing Enhanced Input action.
+    // RMB также используется для поворота камеры.
     if (!SetDestinationClickAction || !DefaultMappingContext)
     {
         InputComponent->BindKey(
             EKeys::LeftMouseButton,
             IE_Pressed,
             this,
-            &ARaidIsComingPlayerController::OnConstructionClick
+            &ARaidIsComingPlayerController::OnMouseInputStarted
         ).bConsumeInput = false;
-        UE_LOG(LogTemp, Warning, TEXT("[RIC Input] Direct construction LMB enabled."));
     }
 
     // Контекст ввода для обычного движения.
@@ -171,7 +149,7 @@ void ARaidIsComingPlayerController::SetupInputComponent()
             SetDestinationClickAction,
             ETriggerEvent::Started,
             this,
-            &ARaidIsComingPlayerController::OnInputStarted
+            &ARaidIsComingPlayerController::OnMouseInputStarted
         );
 
         EnhancedInputComponent->BindAction(
@@ -200,7 +178,7 @@ void ARaidIsComingPlayerController::SetupInputComponent()
         UE_LOG(
             LogRaidIsComing,
             Warning,
-            TEXT("[RIC Input] Legacy mouse movement disabled: Input Action or Mapping Context missing. Construction uses direct LMB.")
+            TEXT("Legacy mouse movement disabled: Input Action or Mapping Context missing. Construction uses direct LMB.")
         );
     }
 
@@ -237,44 +215,71 @@ void ARaidIsComingPlayerController::SetupInputComponent()
     }
 }
 
-void ARaidIsComingPlayerController::EnterConstructionMode()
+void ARaidIsComingPlayerController::OnMouseInputStarted()
 {
-    if (!ConstructionComponent || !GetWorld())
+    if (bResolvingBuildMenu)
     {
         return;
     }
-
-    ConstructionComponent->CancelPreview();
-    bWaitingForBuildingSelection = true;
-    StopMovement();
-    FollowTime = 0.0f;
-    bSuppressDestinationUntilRelease = true;
-
-    // Пока тип не выбран, показываем потенциальные зоны для обеих башен.
-    // Проверка размеров и свободного места выполняется после выбора 1/2.
-    const ARICBuilding* ArcherDefaults = ArcherTowerClass
-        ? ArcherTowerClass->GetDefaultObject<ARICBuilding>() : nullptr;
-    const ARICBuilding* MageDefaults = MageTowerClass
-        ? MageTowerClass->GetDefaultObject<ARICBuilding>() : nullptr;
-
-    for (TActorIterator<ARICBuildZone> It(GetWorld()); It; ++It)
+    if (BuildMenuWidget)
     {
-        const bool bAllowed =
-            (ArcherDefaults && It->IsBuildingAllowed(ArcherDefaults->BuildingType))
-            || (MageDefaults && It->IsBuildingAllowed(MageDefaults->BuildingType));
-        It->SetHighlighted(bAllowed);
+        CloseBuildMenu();
+        StartArcherTowerPreview();
+        return;
     }
 
-    UE_LOG(LogTemp, Log,
-        TEXT("[RIC Input] Construction selection: 1 Archer, 2 Mage, 3 Barrier. RMB cancels."));
+    if (ConstructionComponent && !bConstructionModeActive && !ConstructionComponent->IsBuildingMode())
+    {
+        AActor* Target = ConstructionComponent->GetConstructionTargetUnderCursor(
+            ArcherTowerClass, BarrierClass);
+        if (Target)
+        {
+            ConstructionComponent->SetPreviewHighlightTarget(Target);
+            if (Target->IsA<ARICPassage>())
+            {
+                StartBarrierPreview();
+            }
+            else
+            {
+                StartArcherTowerPreview();
+            }
+
+            if (bConstructionModeActive)
+            {
+                return;
+            }
+
+            bBarrierPreview = false;
+            ConstructionComponent->SetPreviewHighlightTarget(nullptr);
+        }
+    }
+
+    if (SetDestinationClickAction && DefaultMappingContext)
+    {
+        OnInputStarted();
+    }
+    else
+    {
+        OnConstructionClick();
+    }
 }
 
 void ARaidIsComingPlayerController::CancelBuildingPreview()
 {
-    bWaitingForBuildingSelection = false;
+    if (bResolvingBuildMenu)
+    {
+        return;
+    }
+    if (BuildMenuWidget)
+    {
+        CloseBuildMenu();
+    }
+    bConstructionModeActive = false;
+    bBarrierPreview = false;
     if (ConstructionComponent)
     {
         ConstructionComponent->CancelPreview();
+        ConstructionComponent->SetPreviewHighlightTarget(nullptr);
     }
 }
 
@@ -285,15 +290,12 @@ void ARaidIsComingPlayerController::OnInputStarted()
     FollowTime = 0.0f;
 
     bSuppressDestinationUntilRelease =
-        bWaitingForBuildingSelection
+        bConstructionModeActive
         || (ConstructionComponent && ConstructionComponent->IsBuildingMode());
 
     if (bSuppressDestinationUntilRelease)
     {
-        if (!bWaitingForBuildingSelection && ConstructionComponent)
-        {
-            ConstructionComponent->TryPlacePreview();
-        }
+        OnConstructionClick();
         return;
     }
 
@@ -303,7 +305,7 @@ void ARaidIsComingPlayerController::OnInputStarted()
 void ARaidIsComingPlayerController::OnSetDestinationTriggered()
 {
     // Во время превью клик не управляет персонажем.
-    if (bWaitingForBuildingSelection
+    if (bConstructionModeActive
         || (ConstructionComponent && ConstructionComponent->IsBuildingMode())
         || bSuppressDestinationUntilRelease)
     {
@@ -330,7 +332,7 @@ void ARaidIsComingPlayerController::OnSetDestinationTriggered()
 
 void ARaidIsComingPlayerController::OnSetDestinationReleased()
 {
-    if (bWaitingForBuildingSelection
+    if (bConstructionModeActive
         || (ConstructionComponent && ConstructionComponent->IsBuildingMode())
         || bSuppressDestinationUntilRelease)
     {
@@ -407,12 +409,8 @@ void ARaidIsComingPlayerController::UpdateCachedDestination()
 }
 void ARaidIsComingPlayerController::StartArcherTowerPreview()
 {
+    bBarrierPreview = false;
     StartTowerPreview(ArcherTowerClass);
-}
-
-void ARaidIsComingPlayerController::StartMageTowerPreview()
-{
-    StartTowerPreview(MageTowerClass);
 }
 
 void ARaidIsComingPlayerController::StartTowerPreview(
@@ -438,17 +436,10 @@ void ARaidIsComingPlayerController::StartTowerPreview(
         return;
     }
 
-    UE_LOG(LogTemp, Warning, TEXT("[RIC Input] Preview requested: %s"),
-        *GetNameSafe(BuildingClass.Get()));
     const bool bStarted = ConstructionComponent->StartPreview(BuildingClass);
-    if (!bStarted && bWaitingForBuildingSelection)
-    {
-        EnterConstructionMode();
-    }
-    UE_LOG(LogTemp, Warning, TEXT("[RIC Input] Preview started=%d (visibility depends on valid zone/passage)."), bStarted);
     if (bStarted)
     {
-        bWaitingForBuildingSelection = false;
+        bConstructionModeActive = true;
         StopMovement();
 
         FollowTime = 0.0f;
@@ -457,44 +448,196 @@ void ARaidIsComingPlayerController::StartTowerPreview(
 }
 void ARaidIsComingPlayerController::StartBarrierPreview()
 {
-    UE_LOG(LogTemp, Warning, TEXT("[RIC Input] 3 received."));
+    CloseBuildMenu();
+    bBarrierPreview = true;
     StartTowerPreview(BarrierClass);
 }
 
-void ARaidIsComingPlayerController::StartNextWaveFromInput()
+void ARaidIsComingPlayerController::RegisterStartAttackButton(URICStartAttackButton* Button)
 {
-    if (!IsLocalPlayerController() || !GetWorld())
+    if (!GetLocalPlayer() || !GetWorld())
     {
+        Button->SetVisibility(ESlateVisibility::Collapsed);
         return;
     }
 
-    if (!CachedWaveManager.IsValid())
+    AWaveManager* Manager = nullptr;
+    for (TActorIterator<AWaveManager> It(GetWorld()); It; ++It)
     {
-        AWaveManager* FoundManager = nullptr;
-        for (TActorIterator<AWaveManager> It(GetWorld()); It; ++It)
+        if (!IsValid(*It))
         {
-            if (!IsValid(*It))
-            {
-                continue;
-            }
-            if (FoundManager)
-            {
-                UE_LOG(LogTemp, Error,
-                    TEXT("[RIC Input] Multiple WaveManagers found. Keep one manager on the level."));
-                return;
-            }
-            FoundManager = *It;
+            continue;
         }
-        CachedWaveManager = FoundManager;
+        if (Manager)
+        {
+            UE_LOG(LogTemp, Error,
+                TEXT("Multiple WaveManagers found. Keep one manager on the level."));
+            Button->SetVisibility(ESlateVisibility::Collapsed);
+            return;
+        }
+        Manager = *It;
     }
 
-    AWaveManager* Manager = CachedWaveManager.Get();
-    if (!IsValid(Manager))
+    if (!Manager || Manager->LevelPhase != ERICLevelPhase::Preparation ||
+        Manager->GetTotalWaves() == 0)
     {
-        UE_LOG(LogTemp, Warning,
-            TEXT("[RIC Input] Q: WaveManager was not found on this level."));
+        Button->SetVisibility(ESlateVisibility::Collapsed);
         return;
     }
 
-    Manager->StartNextWave();
+    ClearStartAttackButton();
+    StartAttackWaveManager = Manager;
+    StartAttackButton = Button;
+    Manager->OnWaveStarted.AddUniqueDynamic(this, &ThisClass::HandleWaveStarted);
+    Button->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleStartAttackClicked);
+    Button->SetVisibility(ESlateVisibility::Visible);
+    SetGameplayInputMode(true);
+}
+
+void ARaidIsComingPlayerController::HandleStartAttackClicked()
+{
+    if (AWaveManager* Manager = StartAttackWaveManager.Get())
+    {
+        Manager->StartNextWave();
+    }
+}
+
+void ARaidIsComingPlayerController::HandleWaveStarted(int32)
+{
+    ClearStartAttackButton();
+    if (!BuildMenuWidget)
+    {
+        SetGameplayInputMode(false);
+    }
+}
+
+void ARaidIsComingPlayerController::ClearStartAttackButton()
+{
+    if (AWaveManager* Manager = StartAttackWaveManager.Get())
+    {
+        Manager->OnWaveStarted.RemoveDynamic(this, &ThisClass::HandleWaveStarted);
+    }
+    StartAttackWaveManager.Reset();
+
+    if (URICStartAttackButton* Button = StartAttackButton.Get())
+    {
+        Button->OnClicked.RemoveDynamic(this, &ThisClass::HandleStartAttackClicked);
+        Button->SetVisibility(ESlateVisibility::Collapsed);
+    }
+    StartAttackButton.Reset();
+}
+
+void ARaidIsComingPlayerController::SetGameplayInputMode(bool bAllowUI)
+{
+    if (bAllowUI)
+    {
+        FInputModeGameAndUI Mode;
+        Mode.SetHideCursorDuringCapture(false);
+        Mode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+        SetInputMode(Mode);
+    }
+    else
+    {
+        FInputModeGameOnly Mode;
+        Mode.SetConsumeCaptureMouseDown(false);
+        SetInputMode(Mode);
+    }
+    bShowMouseCursor = true;
+}
+
+void ARaidIsComingPlayerController::OpenBuildMenu()
+{
+    if (!BuildMenuWidgetClass)
+    {
+        HandlePlacementRejected(NSLOCTEXT("Construction", "MissingMenu", "Assign WBP_BuildMenu in PlayerController Class Defaults."));
+        return;
+    }
+    FVector GroundPosition;
+    if (!ConstructionComponent->FreezePreview(GroundPosition)) return;
+    PendingBuildPosition = GroundPosition;
+    BuildMenuWidget = CreateWidget<URICBuildMenuWidget>(this, BuildMenuWidgetClass);
+    if (!BuildMenuWidget)
+    {
+        PendingBuildPosition.Reset();
+        StartArcherTowerPreview();
+        return;
+    }
+    BuildMenuWidget->OnTowerSelected.AddUniqueDynamic(this, &ThisClass::HandleTowerSelected);
+    BuildMenuWidget->OnCancelled.AddUniqueDynamic(this, &ThisClass::HandleMenuCancelled);
+    BuildMenuWidget->RefreshCosts(ArcherTowerClass, MageTowerClass);
+    BuildMenuWidget->AddToViewport(10);
+    PositionBuildMenu();
+    if (!BuildMenuWidget) return;
+    SetGameplayInputMode(true);
+}
+
+void ARaidIsComingPlayerController::PositionBuildMenu()
+{
+    if (!BuildMenuWidget || !PendingBuildPosition.IsSet()) return;
+    FVector2D Point;
+    if (!UWidgetLayoutLibrary::ProjectWorldLocationToWidgetPosition(
+        this, PendingBuildPosition.GetValue(), Point, true))
+    {
+        HandleMenuCancelled();
+        return;
+    }
+    BuildMenuWidget->ForceLayoutPrepass();
+    const FVector2D Size = BuildMenuWidget->GetDesiredSize();
+    const FBox2D Bounds = BuildMenuWidget->GetMenuBounds(Size);
+    const FVector2D VisibleSize = Bounds.GetSize();
+    int32 Width, Height;
+    GetViewportSize(Width, Height);
+    const float Scale = UWidgetLayoutLibrary::GetViewportScale(this);
+    const FVector2D ViewSize(Width / Scale, Height / Scale);
+    FVector2D TopLeft = Point - FVector2D(VisibleSize.X * 0.5, VisibleSize.Y + 16.0);
+    TopLeft.X = FMath::Clamp(TopLeft.X, 0.0, FMath::Max(0.0, ViewSize.X - VisibleSize.X));
+    TopLeft.Y = FMath::Clamp(TopLeft.Y, 0.0, FMath::Max(0.0, ViewSize.Y - VisibleSize.Y));
+    BuildMenuWidget->SetAlignmentInViewport(FVector2D::ZeroVector);
+    BuildMenuWidget->SetDesiredSizeInViewport(Size);
+    BuildMenuWidget->SetPositionInViewport(TopLeft - Bounds.Min, false);
+}
+
+void ARaidIsComingPlayerController::CloseBuildMenu()
+{
+    if (BuildMenuWidget)
+    {
+        BuildMenuWidget->OnTowerSelected.RemoveAll(this);
+        BuildMenuWidget->OnCancelled.RemoveAll(this);
+        BuildMenuWidget->RemoveFromParent();
+        BuildMenuWidget = nullptr;
+        SetGameplayInputMode(StartAttackButton.IsValid());
+    }
+    PendingBuildPosition.Reset();
+    bSuppressDestinationUntilRelease = true;
+}
+
+void ARaidIsComingPlayerController::HandleTowerSelected(bool bMageTower)
+{
+    if (!BuildMenuWidget || !PendingBuildPosition.IsSet() || bResolvingBuildMenu
+        || !bConstructionModeActive || !ConstructionComponent) return;
+    TGuardValue<bool> ResolvingGuard(bResolvingBuildMenu, true);
+    const FVector Position = PendingBuildPosition.GetValue();
+    CloseBuildMenu();
+    ConstructionComponent->TryPlaceAt(bMageTower ? MageTowerClass : ArcherTowerClass, Position);
+    StartArcherTowerPreview();
+}
+
+void ARaidIsComingPlayerController::HandleMenuCancelled()
+{
+    if (BuildMenuWidget)
+    {
+        CancelBuildingPreview();
+    }
+}
+
+void ARaidIsComingPlayerController::HandlePlacementRejected(const FText& Reason)
+{
+    if (GEngine) GEngine->AddOnScreenDebugMessage(INDEX_NONE, 4.0f, FColor::Red, Reason.ToString());
+}
+
+void ARaidIsComingPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+    ClearStartAttackButton();
+    CloseBuildMenu();
+    Super::EndPlay(EndPlayReason);
 }

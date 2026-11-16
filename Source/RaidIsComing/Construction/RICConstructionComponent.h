@@ -12,6 +12,8 @@ class AStaticMeshActor;
 class UMaterialInterface;
 class ARICPassage;
 
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FRICPlacementRejected, const FText&, Reason);
+
 UCLASS(
     ClassGroup = (Construction),
     meta = (BlueprintSpawnableComponent))
@@ -38,6 +40,18 @@ public:
     UFUNCTION(BlueprintPure, Category = "Construction")
     bool HasValidZonePosition() const;
 
+    AActor* GetConstructionTargetUnderCursor(
+        TSubclassOf<ARICBuilding> TowerClass,
+        TSubclassOf<ARICBuilding> BarrierClass) const;
+    void SetPreviewHighlightTarget(AActor* Target);
+
+    // Suspend the existing preview, keeping highlights. Returns the footprint center on the zone plane.
+    bool FreezePreview(FVector& OutGroundPosition);
+    bool TryPlaceAt(TSubclassOf<ARICBuilding> BuildingClass, const FVector& GroundPosition);
+
+    UPROPERTY(BlueprintAssignable, Category = "Construction")
+    FRICPlacementRejected OnPlacementRejected;
+
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Construction")
     TObjectPtr<UMaterialInterface> PreviewMaterial;
 
@@ -51,13 +65,24 @@ protected:
         const EEndPlayReason::Type EndPlayReason) override;
 
 private:
+    friend class FRICBuildMenuPlacementTest;
+    TOptional<FVector> FixedGroundPosition;
+    bool bPreviewFrozen = false;
+    bool RejectPlacement(const FText& Reason);
     TWeakObjectPtr<ARICPassage> SelectedPassage;
+    TWeakObjectPtr<AActor> PreviewHighlightTarget;
 
     void UpdateBarrierPreviewPosition();
     void HidePassageHighlights();
 
     bool GetBarrierPreviewTransform(
         const ARICPassage& Passage,
+        FTransform& OutTransform) const;
+    bool GetBarrierTransform(
+        const ARICPassage& Passage,
+        const UStaticMeshComponent& Mesh,
+        const FVector& Scale,
+        const FBoxSphereBounds& Bounds,
         FTransform& OutTransform) const;
     UPROPERTY(Transient)
     TObjectPtr<AStaticMeshActor> PreviewActor;

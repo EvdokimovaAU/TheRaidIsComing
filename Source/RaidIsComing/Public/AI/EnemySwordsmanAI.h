@@ -17,9 +17,7 @@ public:
 
     AEnemySwordsmanAI();
 
-    // ======================================
     // WALL SETTINGS
-    // ======================================
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AI|Wall")
     float WallAttackCooldown = 1.0f;
@@ -59,9 +57,7 @@ public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AI|Wall")
     TObjectPtr<ARICBuilding> TargetWall = nullptr;
 
-    // ======================================
     // INITIAL MOVEMENT
-    // ======================================
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AI|Mage")
     float InitialMovementDelay = 0.8f;
@@ -72,9 +68,7 @@ public:
 
     void AllowInitialMovement();
 
-    // ======================================
     // BASE AI
-    // ======================================
 
     virtual void Tick(float DeltaSeconds) override;
 
@@ -86,9 +80,7 @@ public:
 
     virtual void Die() override;
 
-    // ======================================
     // WALL COMBAT
-    // ======================================
 
     UFUNCTION(BlueprintCallable, Category = "AI|Wall")
     void StartWallAttack(AActor* Wall);
@@ -102,9 +94,7 @@ public:
     UFUNCTION(BlueprintCallable, Category = "AI|Wall")
     void OnWallDestroyed();
 
-    // ======================================
     // CAPITOL COMBAT
-    // ======================================
 
     UFUNCTION(BlueprintCallable, Category = "AI|Capitol")
     void CheckCapitolDistance();
@@ -118,9 +108,7 @@ public:
     UFUNCTION(BlueprintCallable, Category = "AI|Capitol")
     void StopCapitolAttack();
 
-    // ======================================
     // MAGE ESCORT
-    // ======================================
 
     UFUNCTION(BlueprintCallable, Category = "AI|Mage")
     void WaitForMage(AActor* Mage);
@@ -148,9 +136,7 @@ public:
 
     bool IsAttackingCapitol() const;
 
-    // ======================================
     // ESCORT SPEED CONTROL
-    // ======================================
 
     // Called by the mage to smoothly adjust
     // swordsman movement speed.
@@ -190,9 +176,7 @@ private:
     FVector WallApproachDestination = FVector::ZeroVector;
     bool bWallApproachMoveIssued = false;
 
-    // ======================================
     // WALL HELPERS
-    // ======================================
 
     void CheckWallAhead();
 
@@ -220,9 +204,7 @@ private:
 
     void StopAttackAnimation();
 
-    // ======================================
     // MAGE HELPERS
-    // ======================================
 
     TWeakObjectPtr<AActor> EscortMage;
 
@@ -230,9 +212,7 @@ private:
 
     void CheckMageWaitingState();
 
-    // ======================================
     // ESCORT SPEED STATE
-    // ======================================
 
     // Mage currently controlling the speed.
     TWeakObjectPtr<AActor> SpeedLimitOwner;
@@ -240,9 +220,7 @@ private:
     // Original speed before escort adjustment.
     float OriginalWalkSpeed = 0.0f;
 
-    // ======================================
     // WALL STATE
-    // ======================================
 
     TWeakObjectPtr<ARICBuilding> AvoidedWall;
 
@@ -270,9 +248,7 @@ private:
 
     float SavedWalkSpeed = 0.0f;
 
-    // ======================================
     // TIMERS
-    // ======================================
 
     FTimerHandle WallCheckTimer;
 

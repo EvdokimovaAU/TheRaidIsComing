@@ -30,6 +30,8 @@ public:
     UFUNCTION(BlueprintPure, Category = "Building|Health")
     bool IsDestructible() const;
 
+    int32 GetConstructionCost(const UObject* WorldContext) const;
+
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Building")
     TObjectPtr<UStaticMeshComponent> BuildingMesh;
 

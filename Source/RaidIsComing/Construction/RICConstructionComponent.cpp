@@ -14,6 +14,18 @@
 
 namespace
 {
+    const UStaticMeshComponent* GetBuildingMesh(TSubclassOf<ARICBuilding> BuildingClass)
+    {
+        const ARICBuilding* Defaults = BuildingClass.GetDefaultObject();
+        const UStaticMeshComponent* Mesh = Defaults ? Defaults->BuildingMesh.Get() : nullptr;
+        return Mesh && Mesh->GetStaticMesh() ? Mesh : nullptr;
+    }
+
+    FBoxSphereBounds GetMeshBoundsAtScale(const UStaticMeshComponent& Mesh, const FVector& Scale)
+    {
+        return Mesh.CalcBounds(FTransform(FQuat::Identity, FVector::ZeroVector, Scale));
+    }
+
     // Проекция локального bounding box меша на плоскость XY.
     // Полуоси сохраняют поворот и масштаб вместо расширения до мирового AABB.
     struct FBuildingFootprint
@@ -87,7 +99,7 @@ namespace
                 const double Distance = FMath::Abs(FVector2D::DotProduct(Delta, Axis));
                 if (Distance >= RadiusA + RadiusB - ContactTolerance)
                 {
-                    // Касание разрешено, как и в прежней проверке.
+                    // Касание разрешено.
                     return false;
                 }
             }
@@ -159,6 +171,13 @@ namespace
             FVector(LocalResult.X, LocalResult.Y, 0.0));
 
         return true;
+    }
+
+    bool IsPointInZone(const ARICBuildZone& Zone, const FVector& Point)
+    {
+        FVector NearestPoint;
+        return FindPositionInZone(Zone, FVector2D::ZeroVector, Point, NearestPoint)
+            && FVector2D(Point).Equals(FVector2D(NearestPoint), 0.001);
     }
 }
 
@@ -244,7 +263,7 @@ bool URICConstructionComponent::StartPreview(
 
     Mesh->SetStaticMesh(SourceMesh->GetStaticMesh());
 
-    // Копируем размер меша из Blueprint казармы.
+    // Масштаб меша из класса постройки.
     PreviewActor->SetActorScale3D(
         SourceMesh->GetRelativeScale3D());
 
@@ -319,6 +338,7 @@ bool URICConstructionComponent::StartPreview(
 void URICConstructionComponent::CancelPreview()
 {
     SetComponentTickEnabled(false);
+    bPreviewFrozen = false;
 
     bHasValidZonePosition = false;
 
@@ -345,6 +365,90 @@ bool URICConstructionComponent::HasValidZonePosition() const
     return IsBuildingMode() && bHasValidZonePosition;
 }
 
+AActor* URICConstructionComponent::GetConstructionTargetUnderCursor(
+    TSubclassOf<ARICBuilding> TowerClass,
+    TSubclassOf<ARICBuilding> BarrierClass) const
+{
+    UWorld* World = GetWorld();
+    const APlayerController* Controller = Cast<APlayerController>(GetOwner());
+    if (!World || !Controller || !Controller->IsLocalController())
+    {
+        return nullptr;
+    }
+
+    FVector RayOrigin = FVector::ZeroVector;
+    FVector RayDirection = FVector::ZeroVector;
+    if (!Controller->DeprojectMousePositionToWorld(RayOrigin, RayDirection)
+        || FMath::Abs(RayDirection.Z) <= 0.000001)
+    {
+        return nullptr;
+    }
+    double ClosestDistance = TNumericLimits<double>::Max();
+    AActor* Target = nullptr;
+
+    const UStaticMeshComponent* BarrierMesh = GetBuildingMesh(BarrierClass);
+    const FVector BarrierScale = BarrierMesh ? BarrierMesh->GetRelativeScale3D() : FVector::OneVector;
+    const FBoxSphereBounds BarrierBounds = BarrierMesh
+        ? GetMeshBoundsAtScale(*BarrierMesh, BarrierScale)
+        : FBoxSphereBounds(ForceInit);
+    for (TActorIterator<ARICPassage> It(World); It; ++It)
+    {
+        ARICPassage& Passage = **It;
+        FTransform Placement;
+        const double Distance = (Passage.GetActorLocation().Z - RayOrigin.Z) / RayDirection.Z;
+        if (Distance < 0.0 || Distance >= ClosestDistance)
+        {
+            continue;
+        }
+        const FVector Local = Passage.GetActorTransform().InverseTransformPosition(
+            RayOrigin + RayDirection * Distance);
+        if (FMath::Abs(Local.X) <= Passage.HalfSize.X && FMath::Abs(Local.Y) <= Passage.HalfSize.Y
+            && BarrierMesh && GetBarrierTransform(Passage, *BarrierMesh, BarrierScale, BarrierBounds, Placement))
+        {
+            ClosestDistance = Distance;
+            Target = &Passage;
+        }
+    }
+
+    const UStaticMeshComponent* TowerMesh = GetBuildingMesh(TowerClass);
+    const ARICBuilding* Tower = TowerClass.GetDefaultObject();
+    const FVector TowerExtent = TowerMesh
+        ? GetMeshBoundsAtScale(*TowerMesh, TowerMesh->GetRelativeScale3D()).BoxExtent
+        : FVector::ZeroVector;
+    for (TActorIterator<ARICBuildZone> It(World); It; ++It)
+    {
+        ARICBuildZone& Zone = **It;
+        FVector Center;
+        if (!TowerMesh || !Zone.IsBuildingAllowed(Tower->BuildingType))
+        {
+            continue;
+        }
+
+        const double Distance = (Zone.GetActorLocation().Z - RayOrigin.Z) / RayDirection.Z;
+        if (Distance < 0.0 || Distance >= ClosestDistance)
+        {
+            continue;
+        }
+        const FVector Point = RayOrigin + RayDirection * Distance;
+        if (IsPointInZone(Zone, Point)
+            && FindPositionInZone(Zone, FVector2D(TowerExtent), Zone.GetActorLocation(), Center))
+        {
+            ClosestDistance = Distance;
+            Target = &Zone;
+        }
+    }
+    return Target;
+}
+
+void URICConstructionComponent::SetPreviewHighlightTarget(AActor* Target)
+{
+    PreviewHighlightTarget = Target;
+    if (IsBuildingMode())
+    {
+        UpdateZoneHighlights(true);
+    }
+}
+
 void URICConstructionComponent::TickComponent(
     float DeltaTime,
     ELevelTick TickType,
@@ -361,7 +465,10 @@ void URICConstructionComponent::TickComponent(
         return;
     }
 
-    UpdatePreviewPosition();
+    if (!bPreviewFrozen)
+    {
+        UpdatePreviewPosition();
+    }
 }
 
 void URICConstructionComponent::UpdatePreviewPosition()
@@ -391,7 +498,12 @@ void URICConstructionComponent::UpdatePreviewPosition()
     FVector RayOrigin;
     FVector RayDirection;
 
-    if (!Controller->DeprojectMousePositionToWorld(
+    if (FixedGroundPosition.IsSet())
+    {
+        RayOrigin = FixedGroundPosition.GetValue() + FVector(0.0, 0.0, 100000.0);
+        RayDirection = -FVector::UpVector;
+    }
+    else if (!Controller->DeprojectMousePositionToWorld(
         RayOrigin,
         RayDirection)
         || FMath::Abs(RayDirection.Z) < 0.000001)
@@ -408,7 +520,8 @@ void URICConstructionComponent::UpdatePreviewPosition()
         ARICBuildZone* Zone = *It;
 
         if (!Zone->IsBuildingAllowed(SelectedType)
-            || !IsSupportedZone(*Zone))
+            || !IsSupportedZone(*Zone)
+            || (!PreviewHighlightTarget.IsExplicitlyNull() && PreviewHighlightTarget.Get() != Zone))
         {
             continue;
         }
@@ -427,10 +540,19 @@ void URICConstructionComponent::UpdatePreviewPosition()
         const FVector CursorOnPlane =
             RayOrigin + RayDirection * DistanceAlongRay;
 
+        if (!PreviewHighlightTarget.IsExplicitlyNull() && !IsPointInZone(*Zone, CursorOnPlane))
+        {
+            continue;
+        }
+
         FVector WantedCenter = CursorOnPlane;
 
-        WantedCenter.X += PreviewCenterOffset.X;
-        WantedCenter.Y += PreviewCenterOffset.Y;
+        // Сохранённая точка — центр основания, независимо от pivot меша.
+        if (!FixedGroundPosition.IsSet())
+        {
+            WantedCenter.X += PreviewCenterOffset.X;
+            WantedCenter.Y += PreviewCenterOffset.Y;
+        }
 
         FVector ValidCenter;
 
@@ -447,6 +569,15 @@ void URICConstructionComponent::UpdatePreviewPosition()
             ValidCenter.X - PreviewCenterOffset.X,
             ValidCenter.Y - PreviewCenterOffset.Y,
             ZoneZ + PreviewHeightOffset);
+
+        // Выбранная башня должна помещаться без сдвига сохранённого центра.
+        if (FixedGroundPosition.IsSet()
+            && (!FVector2D(ValidCenter.X, ValidCenter.Y).Equals(
+                FVector2D(FixedGroundPosition->X, FixedGroundPosition->Y), 0.01)
+                || !FMath::IsNearlyEqual(ZoneZ, FixedGroundPosition->Z, 0.01)))
+        {
+            continue;
+        }
 
         const double DX =
             CandidateLocation.X - CursorOnPlane.X;
@@ -490,7 +621,8 @@ void URICConstructionComponent::UpdateZoneHighlights(
 
         bool bShow = false;
 
-        if (bEnabled && Zone->IsBuildingAllowed(SelectedType))
+        if (bEnabled && Zone->IsBuildingAllowed(SelectedType)
+            && (PreviewHighlightTarget.IsExplicitlyNull() || PreviewHighlightTarget.Get() == Zone))
         {
             FVector AnyValidCenter;
 
@@ -548,9 +680,54 @@ bool URICConstructionComponent::HasBuildingOverlap(
     return false;
 }
 
+bool URICConstructionComponent::FreezePreview(FVector& OutGroundPosition)
+{
+    if (bPreviewFrozen || !IsBuildingMode() || SelectedType == ERICBuildingType::Barrier)
+    {
+        return false;
+    }
+    UpdatePreviewPosition();
+    if (!HasValidZonePosition())
+    {
+        return false;
+    }
+    OutGroundPosition = PreviewActor->GetActorLocation();
+    OutGroundPosition.X += PreviewCenterOffset.X;
+    OutGroundPosition.Y += PreviewCenterOffset.Y;
+    OutGroundPosition.Z -= PreviewHeightOffset;
+    bPreviewFrozen = true;
+    SetComponentTickEnabled(false);
+    PreviewActor->SetActorHiddenInGame(true);
+    return true;
+}
+
+bool URICConstructionComponent::TryPlaceAt(
+    TSubclassOf<ARICBuilding> BuildingClass, const FVector& GroundPosition)
+{
+    if (!bPreviewFrozen || GroundPosition.ContainsNaN())
+    {
+        return false;
+    }
+    TGuardValue<TOptional<FVector>> FixedPositionGuard(
+        FixedGroundPosition, TOptional<FVector>(GroundPosition));
+    if (!StartPreview(BuildingClass))
+    {
+        return RejectPlacement(NSLOCTEXT("Construction", "PreviewFailed", "Cannot create the selected building preview."));
+    }
+    SetComponentTickEnabled(false);
+    PreviewActor->SetActorHiddenInGame(true);
+    return TryPlacePreview();
+}
+
+bool URICConstructionComponent::RejectPlacement(const FText& Reason)
+{
+    OnPlacementRejected.Broadcast(Reason);
+    return false;
+}
+
 bool URICConstructionComponent::TryPlacePreview()
 {
-    if (!IsBuildingMode() || !SelectedBuildingClass)
+    if (bPreviewFrozen || !IsBuildingMode() || !SelectedBuildingClass)
     {
         return false;
     }
@@ -581,7 +758,7 @@ bool URICConstructionComponent::TryPlacePreview()
             return false;
         }
 
-        const int32 Cost = Defaults->ConstructionCost;
+        const int32 Cost = Defaults->GetConstructionCost(this);
         if (!Money->CanAfford(Cost))
         {
             UE_LOG(LogTemp, Warning,
@@ -692,7 +869,7 @@ bool URICConstructionComponent::TryPlacePreview()
             Warning,
             TEXT("Construction rejected: no valid zone position."));
 
-        return false;
+        return RejectPlacement(NSLOCTEXT("Construction", "Rejected0", "No valid build zone at the selected position."));
     }
     const ARICBuilding* BuildingDefaults =
         SelectedBuildingClass.GetDefaultObject();
@@ -709,10 +886,10 @@ bool URICConstructionComponent::TryPlacePreview()
             TEXT("Construction rejected: missing building defaults or money component.")
         );
 
-        return false;
+        return RejectPlacement(NSLOCTEXT("Construction", "Rejected1", "Building class or money component is missing."));
     }
 
-    const int32 Cost = BuildingDefaults->ConstructionCost;
+    const int32 Cost = BuildingDefaults->GetConstructionCost(this);
 
     if (!Money->CanAfford(Cost))
     {
@@ -724,7 +901,7 @@ bool URICConstructionComponent::TryPlacePreview()
             Money->CurrentMoney
         );
 
-        return false;
+        return RejectPlacement(NSLOCTEXT("Construction", "Rejected2", "Not enough gold."));
     }
 
     UWorld* World = GetWorld();
@@ -734,7 +911,7 @@ bool URICConstructionComponent::TryPlacePreview()
 
     if (!World || !PreviewMesh || !PreviewMesh->GetStaticMesh())
     {
-        return false;
+        return RejectPlacement(NSLOCTEXT("Construction", "Rejected3", "The selected building mesh is missing."));
     }
 
     if (HasBuildingOverlap(PreviewMesh, PreviewMesh->GetComponentTransform()))
@@ -744,7 +921,7 @@ bool URICConstructionComponent::TryPlacePreview()
             Warning,
             TEXT("Construction rejected: overlaps another building."));
 
-        return false;
+        return RejectPlacement(NSLOCTEXT("Construction", "Rejected4", "The position overlaps another building."));
     }
 
     const FTransform PlacementTransform =
@@ -773,7 +950,7 @@ bool URICConstructionComponent::TryPlacePreview()
             Warning,
             TEXT("Construction rejected: could not spawn building."));
 
-        return false;
+        return RejectPlacement(NSLOCTEXT("Construction", "Rejected5", "Could not create the building."));
     }
 
     // Устанавливаем тот же масштаб и позицию, что были у превью.
@@ -791,7 +968,7 @@ bool URICConstructionComponent::TryPlacePreview()
             Warning,
             TEXT("Construction rejected: spawned building has no mesh."));
 
-        return false;
+        return RejectPlacement(NSLOCTEXT("Construction", "Rejected6", "The building has no mesh."));
     }
 
     // Повторно проверяем реальный объект:
@@ -812,7 +989,7 @@ bool URICConstructionComponent::TryPlacePreview()
             Warning,
             TEXT("Construction rejected: invalid building dimensions."));
 
-        return false;
+        return RejectPlacement(NSLOCTEXT("Construction", "Rejected7", "Invalid building dimensions."));
     }
 
     const FVector2D ActualHalfSize(
@@ -825,7 +1002,8 @@ bool URICConstructionComponent::TryPlacePreview()
     {
         ARICBuildZone* Zone = *It;
 
-        if (!Zone->IsBuildingAllowed(NewBuilding->BuildingType))
+        if (!Zone->IsBuildingAllowed(NewBuilding->BuildingType)
+            || (!PreviewHighlightTarget.IsExplicitlyNull() && PreviewHighlightTarget.Get() != Zone))
         {
             continue;
         }
@@ -873,7 +1051,7 @@ bool URICConstructionComponent::TryPlacePreview()
             Warning,
             TEXT("Construction rejected: spawned building does not fit."));
 
-        return false;
+        return RejectPlacement(NSLOCTEXT("Construction", "Rejected8", "The building does not fit at the selected position."));
     }
     if (!Money->TrySpend(Cost))
     {
@@ -885,7 +1063,7 @@ bool URICConstructionComponent::TryPlacePreview()
             TEXT("Construction rejected: payment failed.")
         );
 
-        return false;
+        return RejectPlacement(NSLOCTEXT("Construction", "Rejected9", "Payment failed."));
     }
     UE_LOG(
         LogTemp,
@@ -901,9 +1079,23 @@ bool URICConstructionComponent::GetBarrierPreviewTransform(
     const ARICPassage& Passage,
     FTransform& OutTransform) const
 {
-    if (!IsValid(PreviewActor.Get())
-        || Passage.IsActorBeingDestroyed()
-        || !Passage.IsOpen())
+    const UStaticMeshComponent* Mesh = IsBuildingMode() ? PreviewActor->GetStaticMeshComponent() : nullptr;
+    if (!Mesh || !Mesh->GetStaticMesh())
+    {
+        return false;
+    }
+    const FVector Scale = PreviewActor->GetActorScale3D();
+    return GetBarrierTransform(Passage, *Mesh, Scale, GetMeshBoundsAtScale(*Mesh, Scale), OutTransform);
+}
+
+bool URICConstructionComponent::GetBarrierTransform(
+    const ARICPassage& Passage,
+    const UStaticMeshComponent& Mesh,
+    const FVector& Scale,
+    const FBoxSphereBounds& Bounds,
+    FTransform& OutTransform) const
+{
+    if (Passage.IsActorBeingDestroyed() || !Passage.IsOpen())
     {
         return false;
     }
@@ -920,8 +1112,8 @@ bool URICConstructionComponent::GetBarrierPreviewTransform(
 
     constexpr double Tolerance = 0.001;
 
-    if (FootprintHalfSize.X > Passage.HalfSize.X + Tolerance
-        || FootprintHalfSize.Y > Passage.HalfSize.Y + Tolerance)
+    if (Bounds.BoxExtent.X > Passage.HalfSize.X + Tolerance
+        || Bounds.BoxExtent.Y > Passage.HalfSize.Y + Tolerance)
     {
         return false;
     }
@@ -933,25 +1125,13 @@ bool URICConstructionComponent::GetBarrierPreviewTransform(
 
     // Смещение центра меша тоже поворачиваем вместе с преградой.
     const FVector RotatedOffset = Rotation.RotateVector(
-        FVector(PreviewCenterOffset.X, PreviewCenterOffset.Y, 0.0));
+        FVector(Bounds.Origin.X, Bounds.Origin.Y, 0.0));
 
     FVector Location = Passage.GetActorLocation() - RotatedOffset;
-    Location.Z = Passage.GetActorLocation().Z + PreviewHeightOffset;
+    Location.Z = Passage.GetActorLocation().Z + (Bounds.BoxExtent.Z - Bounds.Origin.Z);
 
-    OutTransform = FTransform(
-        Rotation,
-        Location,
-        PreviewActor->GetActorScale3D());
-
-    const UStaticMeshComponent* Mesh =
-        PreviewActor->GetStaticMeshComponent();
-
-    if (!Mesh || !Mesh->GetStaticMesh())
-    {
-        return false;
-    }
-
-    return !HasBuildingOverlap(Mesh, OutTransform);
+    OutTransform = FTransform(Rotation, Location, Scale);
+    return !HasBuildingOverlap(&Mesh, OutTransform);
 }
 void URICConstructionComponent::UpdateBarrierPreviewPosition()
 {
@@ -991,7 +1171,8 @@ void URICConstructionComponent::UpdateBarrierPreviewPosition()
 
         FTransform CandidateTransform;
         const bool bAvailable =
-            GetBarrierPreviewTransform(*Passage, CandidateTransform);
+            (PreviewHighlightTarget.IsExplicitlyNull() || PreviewHighlightTarget.Get() == Passage)
+            && GetBarrierPreviewTransform(*Passage, CandidateTransform);
 
         Passage->SetHighlighted(bAvailable);
 

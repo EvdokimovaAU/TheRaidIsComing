@@ -6,8 +6,10 @@
 #include "Templates/SubclassOf.h"
 #include "GameFramework/PlayerController.h"
 #include "RaidIsComingPlayerController.generated.h"
+class URICBuildMenuWidget;
 class URICMoneyComponent;
 class AWaveManager;
+class URICStartAttackButton;
 
 class UNiagaraSystem;
 class UInputMappingContext;
@@ -67,27 +69,59 @@ protected:
     float FollowTime = 0.0f;
 
     bool bSuppressDestinationUntilRelease = false;
-    bool bWaitingForBuildingSelection = false;
+
 
     virtual void BeginPlay() override;
     virtual void SetupInputComponent() override;
     void OnConstructionClick();
-    void StartNextWaveFromInput();
-    TWeakObjectPtr<AWaveManager> CachedWaveManager;
 
-    void EnterConstructionMode();
     void StartArcherTowerPreview();
-    void StartMageTowerPreview();
     void StartBarrierPreview();
 
     void StartTowerPreview(TSubclassOf<ARICBuilding> BuildingClass);
     void CancelBuildingPreview();
 
     void OnInputStarted();
+    void OnMouseInputStarted();
     void OnSetDestinationTriggered();
     void OnSetDestinationReleased();
     void OnTouchTriggered();
     void OnTouchReleased();
 
     void UpdateCachedDestination();
+    virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+
+    UPROPERTY(EditDefaultsOnly, Category = "Construction|Menu")
+    TSubclassOf<URICBuildMenuWidget> BuildMenuWidgetClass;
+
+private:
+    friend class URICStartAttackButton;
+
+    TWeakObjectPtr<AWaveManager> StartAttackWaveManager;
+    TWeakObjectPtr<URICStartAttackButton> StartAttackButton;
+    void RegisterStartAttackButton(URICStartAttackButton* Button);
+    void ClearStartAttackButton();
+    void SetGameplayInputMode(bool bAllowUI);
+
+    UFUNCTION()
+    void HandleStartAttackClicked();
+
+    UFUNCTION()
+    void HandleWaveStarted(int32 WaveNumber);
+
+    UPROPERTY(Transient)
+    TObjectPtr<URICBuildMenuWidget> BuildMenuWidget;
+    TOptional<FVector> PendingBuildPosition;
+    bool bConstructionModeActive = false;
+    bool bBarrierPreview = false;
+    bool bResolvingBuildMenu = false;
+    void OpenBuildMenu();
+    void CloseBuildMenu();
+    void PositionBuildMenu();
+    UFUNCTION()
+    void HandleTowerSelected(bool bMageTower);
+    UFUNCTION()
+    void HandleMenuCancelled();
+    UFUNCTION()
+    void HandlePlacementRejected(const FText& Reason);
 };

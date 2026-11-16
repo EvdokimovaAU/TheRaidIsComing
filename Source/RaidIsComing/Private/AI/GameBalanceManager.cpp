@@ -10,9 +10,7 @@ AGameBalanceManager::AGameBalanceManager()
 
     SetActorEnableCollision(false);
 
-    // ========================================
     // SWORDSMAN DEFAULTS
-    // ========================================
 
     Swordsman.MaxHealth = 100.0f;
     Swordsman.MovementSpeed = 300.0f;
@@ -27,9 +25,7 @@ AGameBalanceManager::AGameBalanceManager()
     Swordsman.WallDetectionDistance = 220.0f;
     Swordsman.WallApproachSpeed = 250.0f;
 
-    // ========================================
     // MAGE DEFAULTS
-    // ========================================
 
     Mage.MaxHealth = 100.0f;
     Mage.MovementSpeed = 250.0f;
@@ -50,9 +46,7 @@ AGameBalanceManager::AGameBalanceManager()
     Mage.SpeedChangeRate = 150.0f;
     Mage.FollowUpdateInterval = 0.2f;
 
-    // ========================================
     // TORCHBEARER DEFAULTS
-    // ========================================
 
     Torchbearer.MaxHealth = 100.0f;
     Torchbearer.MovementSpeed = 300.0f;
@@ -66,9 +60,7 @@ AGameBalanceManager::AGameBalanceManager()
     Torchbearer.ReigniteDelay = 1.0f;
     Torchbearer.WallDetectionDistance = 180.0f;
 
-    // ========================================
     // ARCHER TOWER DEFAULTS
-    // ========================================
 
     ArcherTower.MaxHealth = 100.0f;
     ArcherTower.Damage = 10.0f;
@@ -79,9 +71,7 @@ AGameBalanceManager::AGameBalanceManager()
     ArcherTower.SplashRadius = 0.0f;
     ArcherTower.BuildCost = 50;
 
-    // ========================================
     // MAGE TOWER DEFAULTS
-    // ========================================
 
     MageTower.MaxHealth = 100.0f;
     MageTower.Damage = 20.0f;
@@ -92,25 +82,19 @@ AGameBalanceManager::AGameBalanceManager()
     MageTower.SplashRadius = 200.0f;
     MageTower.BuildCost = 50;
 
-    // ========================================
     // SPAWNING DEFAULTS
-    // ========================================
 
     Spawning.MinimumSpawnDistance = 150.0f;
     Spawning.SpawnSearchRadius = 400.0f;
     Spawning.MaxSpawnAttempts = 24;
     Spawning.RetryInterval = 0.5f;
 
-    // ========================================
     // BURNING DEFAULTS
-    // ========================================
 
     Burning.BurnDuration = 5.0f;
     Burning.DamagePerSecond = 2.0f;
 
-    // ========================================
     // GENERAL DEFAULTS
-    // ========================================
 
     General.StartingGold = 300;
     General.CapitolMaxHealth = 100.0f;

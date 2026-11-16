@@ -22,9 +22,7 @@
 #include "Engine/World.h"
 #include "TimerManager.h"
 
-// ==========================================
 // CONSTRUCTOR
-// ==========================================
 
 AEnemyAI::AEnemyAI()
 {
@@ -38,9 +36,7 @@ AEnemyAI::AEnemyAI()
     GetCharacterMovement()->MaxWalkSpeed = 300.0f;
 }
 
-// ==========================================
 // BEGIN PLAY
-// ==========================================
 
 void AEnemyAI::BeginPlay()
 {
@@ -72,9 +68,7 @@ void AEnemyAI::BeginPlay()
     }
 }
 
-// ==========================================
 // APPLY GAME BALANCE
-// ==========================================
 
 void AEnemyAI::ApplyEnemyBalance()
 {
@@ -143,9 +137,7 @@ void AEnemyAI::ApplyEnemyBalance()
         KillReward);
 }
 
-// ==========================================
 // WAIT FOR AI INITIALIZATION
-// ==========================================
 
 void AEnemyAI::TryStartMovement()
 {
@@ -178,9 +170,7 @@ void AEnemyAI::TryStartMovement()
     MoveToTarget();
 }
 
-// ==========================================
 // ASSIGN CAPITOL
-// ==========================================
 
 void AEnemyAI::SetCapitol(AActor* NewCapitol)
 {
@@ -206,18 +196,14 @@ void AEnemyAI::SetCapitol(AActor* NewCapitol)
     }
 }
 
-// ==========================================
 // GET CURRENT TARGET
-// ==========================================
 
 AActor* AEnemyAI::GetCurrentTarget() const
 {
     return CurrentTarget.Get();
 }
 
-// ==========================================
 // NAVIGATION RETRY
-// ==========================================
 
 void AEnemyAI::ScheduleNavigationRetry()
 {
@@ -241,9 +227,7 @@ void AEnemyAI::ScheduleNavigationRetry()
     }
 }
 
-// ==========================================
 // MOVE TO TARGET
-// ==========================================
 
 void AEnemyAI::MoveToTarget()
 {
@@ -284,9 +268,7 @@ void AEnemyAI::MoveToTarget()
     const FVector TargetLocation =
         CurrentTarget->GetActorLocation();
 
-    // ======================================
     // PROJECT ENEMY ON NAVMESH
-    // ======================================
 
     FNavLocation EnemyNavLocation;
 
@@ -306,9 +288,7 @@ void AEnemyAI::MoveToTarget()
         return;
     }
 
-    // ======================================
     // FIND NAVIGATION POINT NEAR TARGET
-    // ======================================
 
     FNavLocation TargetNavLocation;
 
@@ -333,9 +313,7 @@ void AEnemyAI::MoveToTarget()
         return;
     }
 
-    // ======================================
     // CHECK PATH
-    // ======================================
 
     UNavigationPath* Path =
         NavSys->FindPathToLocationSynchronously(
@@ -360,9 +338,7 @@ void AEnemyAI::MoveToTarget()
         NavigationRetryTimer
     );
 
-    // ======================================
     // DIAGNOSTICS
-    // ======================================
 
     UE_LOG(LogTemp, Warning,
         TEXT("========== ENEMY MOVEMENT =========="));
@@ -395,9 +371,7 @@ void AEnemyAI::MoveToTarget()
         TEXT("[EnemyAI] Navigation destination: %s"),
         *TargetNavLocation.Location.ToString());
 
-    // ======================================
     // START MOVEMENT
-    // ======================================
 
     const EPathFollowingRequestResult::Type Result =
         EnemyController->MoveToLocation(
@@ -435,9 +409,7 @@ void AEnemyAI::MoveToTarget()
         TEXT("===================================="));
 }
 
-// ==========================================
 // STOP MOVEMENT
-// ==========================================
 
 void AEnemyAI::StopMovement()
 {
@@ -450,18 +422,14 @@ void AEnemyAI::StopMovement()
     }
 }
 
-// ==========================================
 // OBSTACLE DETECTION
-// ==========================================
 
 void AEnemyAI::OnObstacleDetected(AActor* Obstacle)
 {
     // Implemented by derived enemy classes.
 }
 
-// ==========================================
 // GRANT KILL REWARD
-// ==========================================
 
 void AEnemyAI::GrantKillReward()
 {
@@ -517,9 +485,7 @@ void AEnemyAI::GrantKillReward()
         MoneyComponent->CurrentMoney);
 }
 
-// ==========================================
 // DEATH
-// ==========================================
 
 void AEnemyAI::Die()
 {
@@ -575,9 +541,7 @@ void AEnemyAI::Die()
         ActualDestroyDelay);
 }
 
-// ==========================================
 // END PLAY
-// ==========================================
 
 void AEnemyAI::EndPlay(
     const EEndPlayReason::Type EndPlayReason)

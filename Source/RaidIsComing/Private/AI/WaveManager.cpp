@@ -8,18 +8,14 @@
 #include "GameFramework/PlayerController.h"
 #include "TimerManager.h"
 
-// ==========================================
 // CONSTRUCTOR
-// ==========================================
 
 AWaveManager::AWaveManager()
 {
     PrimaryActorTick.bCanEverTick = false;
 }
 
-// ==========================================
 // BEGIN PLAY
-// ==========================================
 
 void AWaveManager::BeginPlay()
 {
@@ -28,14 +24,9 @@ void AWaveManager::BeginPlay()
     UE_LOG(LogTemp, Warning,
         TEXT("[WaveManager] Initialized. Total waves: %d"),
         Waves.Num());
-
-    UE_LOG(LogTemp, Log,
-        TEXT("[WaveManager] Preparation. Press Q to start wave 1."));
 }
 
-// ==========================================
 // END PLAY
-// ==========================================
 
 void AWaveManager::EndPlay(
     const EEndPlayReason::Type EndPlayReason)
@@ -46,9 +37,7 @@ void AWaveManager::EndPlay(
     Super::EndPlay(EndPlayReason);
 }
 
-// ==========================================
 // MANUAL START
-// ==========================================
 
 void AWaveManager::StartNextWave()
 {
@@ -61,9 +50,7 @@ void AWaveManager::StartNextWave()
     StartNextWaveInternal();
 }
 
-// ==========================================
 // START NEXT WAVE
-// ==========================================
 
 void AWaveManager::StartNextWaveInternal()
 {
@@ -137,9 +124,7 @@ void AWaveManager::StartNextWaveInternal()
         GetCurrentWaveNumber());
 }
 
-// ==========================================
 // REGISTER ENEMY
-// ==========================================
 
 void AWaveManager::RegisterEnemy()
 {
@@ -155,9 +140,7 @@ void AWaveManager::RegisterEnemy()
         AliveEnemies);
 }
 
-// ==========================================
 // ENEMY DIED
-// ==========================================
 
 void AWaveManager::NotifyEnemyDied()
 {
@@ -177,9 +160,7 @@ void AWaveManager::NotifyEnemyDied()
     CheckWaveCompletion();
 }
 
-// ==========================================
 // FINISH SPAWNING
-// ==========================================
 
 void AWaveManager::FinishSpawning()
 {
@@ -199,9 +180,7 @@ void AWaveManager::FinishSpawning()
     CheckWaveCompletion();
 }
 
-// ==========================================
 // WAVE REWARD
-// ==========================================
 
 void AWaveManager::GrantWaveCompletionReward()
 {
@@ -263,9 +242,7 @@ void AWaveManager::GrantWaveCompletionReward()
         MoneyComponent->CurrentMoney);
 }
 
-// ==========================================
 // CHECK WAVE COMPLETION
-// ==========================================
 
 void AWaveManager::CheckWaveCompletion()
 {
@@ -331,9 +308,7 @@ void AWaveManager::CheckWaveCompletion()
         Delay);
 }
 
-// ==========================================
 // GETTERS
-// ==========================================
 
 int32 AWaveManager::GetCurrentWaveNumber() const
 {

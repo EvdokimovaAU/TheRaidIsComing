@@ -26,6 +26,24 @@ bool ARICBuilding::IsDestructible() const
         BuildingType == ERICBuildingType::Capitol;
 }
 
+int32 ARICBuilding::GetConstructionCost(const UObject* WorldContext) const
+{
+    if (const AGameBalanceManager* Balance = AGameBalanceManager::GetBalanceManager(WorldContext))
+    {
+        switch (BuildingType)
+        {
+        case ERICBuildingType::ArcherTower:
+            return FMath::Max(0, Balance->ArcherTower.BuildCost);
+        case ERICBuildingType::MageTower:
+            return FMath::Max(0, Balance->MageTower.BuildCost);
+        default:
+            break;
+        }
+    }
+
+    return ConstructionCost;
+}
+
 bool ARICBuilding::IsAlive() const
 {
     return IsDestructible() &&

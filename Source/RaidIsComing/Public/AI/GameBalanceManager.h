@@ -5,9 +5,7 @@
 #include "GameFramework/Actor.h"
 #include "GameBalanceManager.generated.h"
 
-// ============================================
 // COMMON ENEMY BALANCE
-// ============================================
 
 USTRUCT(BlueprintType)
 struct FEnemyBalanceSettings
@@ -39,9 +37,7 @@ struct FEnemyBalanceSettings
     int32 KillReward = 50;
 };
 
-// ============================================
 // SWORDSMAN
-// ============================================
 
 USTRUCT(BlueprintType)
 struct FSwordsmanBalanceSettings : public FEnemyBalanceSettings
@@ -69,9 +65,7 @@ struct FSwordsmanBalanceSettings : public FEnemyBalanceSettings
     float WallApproachSpeed = 250.0f;
 };
 
-// ============================================
 // MAGE
-// ============================================
 
 USTRUCT(BlueprintType)
 struct FMageBalanceSettings : public FEnemyBalanceSettings
@@ -119,9 +113,7 @@ struct FMageBalanceSettings : public FEnemyBalanceSettings
     float FollowUpdateInterval = 0.2f;
 };
 
-// ============================================
 // TORCHBEARER
-// ============================================
 
 USTRUCT(BlueprintType)
 struct FTorchbearerBalanceSettings : public FEnemyBalanceSettings
@@ -145,9 +137,7 @@ struct FTorchbearerBalanceSettings : public FEnemyBalanceSettings
     float WallDetectionDistance = 180.0f;
 };
 
-// ============================================
 // TOWER
-// ============================================
 
 USTRUCT(BlueprintType)
 struct FTowerBalanceSettings
@@ -187,9 +177,7 @@ struct FTowerBalanceSettings
     int32 BuildCost = 50;
 };
 
-// ============================================
 // SPAWNING
-// ============================================
 
 USTRUCT(BlueprintType)
 struct FSpawnBalanceSettings
@@ -213,9 +201,7 @@ struct FSpawnBalanceSettings
     float RetryInterval = 0.5f;
 };
 
-// ============================================
 // BURNING
-// ============================================
 
 USTRUCT(BlueprintType)
 struct FBurningBalanceSettings
@@ -231,9 +217,7 @@ struct FBurningBalanceSettings
     float DamagePerSecond = 2.0f;
 };
 
-// ============================================
 // GENERAL
-// ============================================
 
 USTRUCT(BlueprintType)
 struct FGeneralBalanceSettings
@@ -262,9 +246,7 @@ struct FGeneralBalanceSettings
     float CapitolMaxHealth = 100.0f;
 };
 
-// ============================================
 // GAME BALANCE MANAGER
-// ============================================
 
 UCLASS(BlueprintType, Blueprintable)
 class RAIDISCOMING_API AGameBalanceManager : public AActor

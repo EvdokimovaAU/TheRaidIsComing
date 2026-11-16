@@ -23,7 +23,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FEnemyEscortObstacleTest,
 
 bool FEnemyEscortObstacleTest::RunTest(const FString& Parameters)
 {
-    // Isolated fixture; no project level or Blueprint defaults are modified.
+    // Отдельный тестовый мир.
     UWorld* World = UWorld::CreateWorld(EWorldType::Game, false);
     if (!TestNotNull(TEXT("Test world"), World)) return false;
     GEngine->CreateNewWorldContext(EWorldType::Game).SetCurrentWorld(World);

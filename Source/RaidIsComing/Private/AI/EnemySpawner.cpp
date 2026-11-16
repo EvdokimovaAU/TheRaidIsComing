@@ -17,18 +17,14 @@
 #include "NavigationSystem.h"
 #include "Components/CapsuleComponent.h"
 
-// ==========================================
 // CONSTRUCTOR
-// ==========================================
 
 AEnemySpawner::AEnemySpawner()
 {
     PrimaryActorTick.bCanEverTick = false;
 }
 
-// ==========================================
 // BALANCE
-// ==========================================
 
 void AEnemySpawner::ApplySpawnBalance()
 {
@@ -66,9 +62,7 @@ void AEnemySpawner::ApplySpawnBalance()
         MaxSpawnAttempts);
 }
 
-// ==========================================
 // BEGIN PLAY
-// ==========================================
 
 void AEnemySpawner::BeginPlay()
 {
@@ -99,9 +93,7 @@ void AEnemySpawner::BeginPlay()
         TEXT("[EnemySpawner] Connected to WaveManager"));
 }
 
-// ==========================================
 // WAVE STARTED
-// ==========================================
 
 void AEnemySpawner::HandleWaveStarted(int32 WaveNumber)
 {
@@ -216,9 +208,7 @@ void AEnemySpawner::HandleWaveStarted(int32 WaveNumber)
     SpawnNextEnemy();
 }
 
-// ==========================================
 // PENDING ENEMIES
-// ==========================================
 
 bool AEnemySpawner::HasPendingEnemies() const
 {
@@ -233,9 +223,7 @@ bool AEnemySpawner::HasPendingEnemies() const
     return false;
 }
 
-// ==========================================
 // CAPSULE DISTANCE CHECK
-// ==========================================
 
 bool AEnemySpawner::IsFarEnoughFromEnemies(
     const FVector& Location,
@@ -305,9 +293,7 @@ bool AEnemySpawner::IsFarEnoughFromEnemies(
     return true;
 }
 
-// ==========================================
 // FIND COMPACT SPAWN LOCATION
-// ==========================================
 
 bool AEnemySpawner::FindFreeSpawnLocation(
     ATargetPoint* Point,
@@ -502,9 +488,7 @@ bool AEnemySpawner::FindFreeSpawnLocation(
     return false;
 }
 
-// ==========================================
 // SPAWN ONE ENEMY
-// ==========================================
 
 bool AEnemySpawner::SpawnEnemy(
     FActiveSpawnGroup& Group,
@@ -584,9 +568,7 @@ bool AEnemySpawner::SpawnEnemy(
     return true;
 }
 
-// ==========================================
 // SPAWN FROM GROUP
-// ==========================================
 
 bool AEnemySpawner::TrySpawnFromGroup(
     FActiveSpawnGroup& Group
@@ -658,9 +640,7 @@ bool AEnemySpawner::TrySpawnFromGroup(
     return false;
 }
 
-// ==========================================
 // SPAWN NEXT ENEMY
-// ==========================================
 
 void AEnemySpawner::SpawnNextEnemy()
 {
@@ -731,9 +711,7 @@ void AEnemySpawner::SpawnNextEnemy()
     );
 }
 
-// ==========================================
 // ENEMY DIED
-// ==========================================
 
 void AEnemySpawner::HandleEnemyDied(
     AEnemyAI* DeadEnemy
@@ -765,9 +743,7 @@ void AEnemySpawner::HandleEnemyDied(
     }
 }
 
-// ==========================================
 // COMPLETE SPAWNING
-// ==========================================
 
 void AEnemySpawner::CompleteSpawning()
 {
@@ -790,9 +766,7 @@ void AEnemySpawner::CompleteSpawning()
     }
 }
 
-// ==========================================
 // END PLAY
-// ==========================================
 
 void AEnemySpawner::EndPlay(
     const EEndPlayReason::Type EndPlayReason
