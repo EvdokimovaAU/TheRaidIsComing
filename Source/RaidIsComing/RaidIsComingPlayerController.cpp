@@ -2,6 +2,7 @@
 
 #include "RaidIsComingPlayerController.h"
 #include "AI/WaveManager.h"
+#include "RICLevelTravel.h"
 
 #include "Construction/RICBuilding.h"
 #include "UI/RICBuildMenuWidget.h"
@@ -21,10 +22,119 @@
 #include "EnhancedInputSubsystems.h"
 #include "GameFramework/Pawn.h"
 #include "InputCoreTypes.h"
+#include "InputKeyEventArgs.h"
 #include "Navigation/PathFollowingComponent.h"
 #include "NiagaraFunctionLibrary.h"
 #include "NiagaraSystem.h"
 #include "RaidIsComing.h"
+#include "Engine/GameViewportClient.h"
+#include "Kismet/GameplayStatics.h"
+#include "Kismet/KismetSystemLibrary.h"
+#include "Widgets/Input/SButton.h"
+#include "Widgets/Layout/SBorder.h"
+#include "Widgets/Layout/SBox.h"
+#include "Widgets/SBoxPanel.h"
+#include "Widgets/Text/STextBlock.h"
+
+namespace
+{
+class SPausePanel : public SBorder
+{
+public:
+    FSimpleDelegate Resume;
+    virtual bool SupportsKeyboardFocus() const override { return true; }
+    virtual FReply OnPreviewKeyDown(const FGeometry& Geometry, const FKeyEvent& Event) override
+    {
+        if (Event.GetKey() == EKeys::Escape)
+        {
+            if (!Event.IsRepeat())
+            {
+                Resume.ExecuteIfBound();
+            }
+            return FReply::Handled();
+        }
+        return SBorder::OnPreviewKeyDown(Geometry, Event);
+    }
+};
+}
+
+void ARaidIsComingPlayerController::OpenPauseMenu()
+{
+    UGameViewportClient* Viewport = GetWorld()->GetGameViewport();
+    if (!Viewport || PauseMenu.IsValid() || IsPaused() ||
+        UGameplayStatics::GetCurrentLevelName(this) == TEXT("Main_Menu") || !SetPause(true))
+    {
+        return;
+    }
+
+    TSharedRef<SVerticalBox> Items = SNew(SVerticalBox);
+    Items->AddSlot().AutoHeight().HAlign(HAlign_Center).Padding(0, 0, 0, 16)
+    [
+        SNew(STextBlock).Text(NSLOCTEXT("Pause", "Title", "Пауза"))
+    ];
+    auto AddButton = [&Items](FText Label, FOnClicked Action)
+    {
+        Items->AddSlot().AutoHeight().Padding(0, 4)
+        [
+            SNew(SButton).HAlign(HAlign_Center).ContentPadding(FMargin(16, 8))
+            .Text(Label).OnClicked(Action)
+        ];
+    };
+    AddButton(NSLOCTEXT("Pause", "Restart", "Перезапустить уровень"), FOnClicked::CreateWeakLambda(this, [this]()
+    {
+        RICLevelTravel::RestartCurrentLevel(this);
+        return FReply::Handled();
+    }));
+    AddButton(NSLOCTEXT("Pause", "Menu", "Выйти в меню"), FOnClicked::CreateWeakLambda(this, [this]()
+    {
+        UGameplayStatics::OpenLevel(this, TEXT("/Game/Levels/Main_Menu"));
+        return FReply::Handled();
+    }));
+    AddButton(NSLOCTEXT("Pause", "Quit", "Выйти из игры"), FOnClicked::CreateWeakLambda(this, [this]()
+    {
+        UKismetSystemLibrary::QuitGame(this, this, EQuitPreference::Quit, false);
+        return FReply::Handled();
+    }));
+
+    TSharedRef<SPausePanel> Panel = SNew(SPausePanel)
+        .BorderImage(FCoreStyle::Get().GetBrush("WhiteBrush"))
+        .BorderBackgroundColor(FLinearColor(0, 0, 0, 0.55f))
+        .HAlign(HAlign_Center).VAlign(VAlign_Center)
+        [
+            SNew(SBorder).Padding(24)
+            [
+                SNew(SBox).WidthOverride(260)[Items]
+            ]
+        ];
+    Panel->Resume.BindUObject(this, &ThisClass::ResumeFromPause);
+    PauseMenu = Panel;
+    Viewport->AddViewportWidgetContent(Panel, 10000);
+    FInputModeUIOnly Mode;
+    Mode.SetWidgetToFocus(Panel);
+    SetInputMode(Mode);
+    bShowMouseCursor = true;
+}
+
+void ARaidIsComingPlayerController::RemovePauseMenu()
+{
+    if (PauseMenu.IsValid())
+    {
+        if (UGameViewportClient* Viewport = GetWorld()->GetGameViewport())
+        {
+            Viewport->RemoveViewportWidgetContent(PauseMenu.ToSharedRef());
+        }
+        PauseMenu.Reset();
+    }
+}
+
+void ARaidIsComingPlayerController::ResumeFromPause()
+{
+    if (SetPause(false))
+    {
+        RemovePauseMenu();
+        SetGameplayInputMode(BuildMenuWidget || StartAttackButton.IsValid());
+    }
+}
 
 ARaidIsComingPlayerController::ARaidIsComingPlayerController()
 {
@@ -78,6 +188,21 @@ void ARaidIsComingPlayerController::OnConstructionClick()
         return;
     }
     OpenBuildMenu();
+}
+
+bool ARaidIsComingPlayerController::InputKey(const FInputKeyEventArgs& Params)
+{
+    // The gameplay controller Blueprint also binds Escape to QuitGame.
+    if (Params.Key == EKeys::Escape && IsLocalPlayerController() &&
+        UGameplayStatics::GetCurrentLevelName(this) != TEXT("Main_Menu"))
+    {
+        if (Params.Event == IE_Pressed)
+        {
+            OpenPauseMenu();
+        }
+        return true;
+    }
+    return Super::InputKey(Params);
 }
 
 void ARaidIsComingPlayerController::SetupInputComponent()
@@ -639,5 +764,6 @@ void ARaidIsComingPlayerController::EndPlay(const EEndPlayReason::Type EndPlayRe
 {
     ClearStartAttackButton();
     CloseBuildMenu();
+    RemovePauseMenu();
     Super::EndPlay(EndPlayReason);
 }

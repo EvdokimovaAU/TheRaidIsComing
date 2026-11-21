@@ -2,6 +2,7 @@
 #include "AI/VictoryScreenComponent.h"
 
 #include "AI/WaveManager.h"
+#include "RICLevelTravel.h"
 #include "Construction/RICBuilding.h"
 
 #include "Blueprint/UserWidget.h"
@@ -159,14 +160,7 @@ void UVictoryScreenComponent::OpenLevelByName(
 
 void UVictoryScreenComponent::RestartLevel()
 {
-    if (!GetWorld())
-    {
-        return;
-    }
-
-    OpenLevelByName(
-        FName(*GetWorld()->GetName())
-    );
+    RICLevelTravel::RestartCurrentLevel(UGameplayStatics::GetPlayerController(this, 0));
 }
 
 void UVictoryScreenComponent::LoadNextLevel()
