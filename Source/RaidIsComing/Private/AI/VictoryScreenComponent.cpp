@@ -9,6 +9,7 @@
 #include "GameFramework/PlayerController.h"
 #include "Kismet/GameplayStatics.h"
 #include "Engine/World.h"
+#include "EngineUtils.h"
 
 UVictoryScreenComponent::UVictoryScreenComponent()
 {
@@ -28,6 +29,17 @@ void UVictoryScreenComponent::BeginPlay()
         return;
     }
 
+    if (!IsValid(Capitol))
+    {
+        for (TActorIterator<ARICBuilding> Building(GetWorld()); Building; ++Building)
+        {
+            if (Building->BuildingType == ERICBuildingType::Capitol)
+            {
+                Capitol = *Building;
+                break;
+            }
+        }
+    }
     WaveManager->OnAllWavesCompleted.AddDynamic(
         this,
         &UVictoryScreenComponent::HandleAllWavesCompleted
