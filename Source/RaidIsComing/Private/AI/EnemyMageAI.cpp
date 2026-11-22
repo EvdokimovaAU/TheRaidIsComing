@@ -1645,7 +1645,7 @@ void AEnemyMageAI::UpdateBehavior()
 
 void AEnemyMageAI::Die()
 {
-    if (bIsDead)
+    if (!IsAlive())
     {
         return;
     }

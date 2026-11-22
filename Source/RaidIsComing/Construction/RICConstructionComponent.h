@@ -66,7 +66,6 @@ protected:
 
 private:
     friend class FRICBuildMenuPlacementTest;
-    friend struct FLevelTwoBalanceProbe;
     TOptional<FVector> FixedGroundPosition;
     bool bPreviewFrozen = false;
     bool RejectPlacement(const FText& Reason);

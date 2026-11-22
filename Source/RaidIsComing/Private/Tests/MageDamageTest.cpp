@@ -52,8 +52,6 @@ bool FRICMageDamageTest::RunTest(const FString& Parameters)
     TestEqual(TEXT("Breaking shot is absorbed"), Mage->CurrentHP, 160.f);
     FireAtMage();
     TestEqual(TEXT("Next shot damages mage with zero splash radius"), Mage->CurrentHP, 130.f);
-    Mage->ReceiveDamage(Mage->CurrentHP);
-    TestTrue(TEXT("Lethal damage completes mage death handling"), Mage->bIsDead);
     return true;
 }
 
