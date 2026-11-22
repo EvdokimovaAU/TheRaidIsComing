@@ -2,12 +2,14 @@
 #include "AI/VictoryScreenComponent.h"
 
 #include "AI/WaveManager.h"
+#include "RICLevelTravel.h"
 #include "Construction/RICBuilding.h"
 
 #include "Blueprint/UserWidget.h"
 #include "GameFramework/PlayerController.h"
 #include "Kismet/GameplayStatics.h"
 #include "Engine/World.h"
+#include "EngineUtils.h"
 
 UVictoryScreenComponent::UVictoryScreenComponent()
 {
@@ -27,6 +29,17 @@ void UVictoryScreenComponent::BeginPlay()
         return;
     }
 
+    if (!IsValid(Capitol))
+    {
+        for (TActorIterator<ARICBuilding> Building(GetWorld()); Building; ++Building)
+        {
+            if (Building->BuildingType == ERICBuildingType::Capitol)
+            {
+                Capitol = *Building;
+                break;
+            }
+        }
+    }
     WaveManager->OnAllWavesCompleted.AddDynamic(
         this,
         &UVictoryScreenComponent::HandleAllWavesCompleted
@@ -159,14 +172,7 @@ void UVictoryScreenComponent::OpenLevelByName(
 
 void UVictoryScreenComponent::RestartLevel()
 {
-    if (!GetWorld())
-    {
-        return;
-    }
-
-    OpenLevelByName(
-        FName(*GetWorld()->GetName())
-    );
+    RICLevelTravel::RestartCurrentLevel(UGameplayStatics::GetPlayerController(this, 0));
 }
 
 void UVictoryScreenComponent::LoadNextLevel()

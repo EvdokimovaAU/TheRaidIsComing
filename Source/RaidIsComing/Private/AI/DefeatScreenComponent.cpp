@@ -2,6 +2,8 @@
 #include "AI/DefeatScreenComponent.h"
 
 #include "Blueprint/UserWidget.h"
+#include "Components/Button.h"
+#include "RICLevelTravel.h"
 #include "GameFramework/PlayerController.h"
 #include "Kismet/GameplayStatics.h"
 
@@ -39,6 +41,13 @@ void UDefeatScreenComponent::ShowDefeat()
 
     Widget->AddToViewport(100);
 
+    if (UButton* RetryButton = Cast<UButton>(Widget->GetWidgetFromName(TEXT("Reset"))))
+    {
+        // WBP_Defeat already binds this button to its own level travel.
+        RetryButton->OnClicked.RemoveAll(Widget);
+        RetryButton->OnClicked.AddDynamic(this, &ThisClass::RetryLevel);
+    }
+
     PC->bShowMouseCursor = true;
 
     FInputModeUIOnly InputMode;
@@ -49,4 +58,9 @@ void UDefeatScreenComponent::ShowDefeat()
 
     UE_LOG(LogTemp, Warning,
         TEXT("[Game] DEFEAT: Capitol destroyed"));
+}
+
+void UDefeatScreenComponent::RetryLevel()
+{
+    RICLevelTravel::RestartCurrentLevel(Cast<APlayerController>(GetOwner()));
 }
