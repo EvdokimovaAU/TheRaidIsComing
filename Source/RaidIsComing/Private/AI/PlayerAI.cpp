@@ -1,4 +1,5 @@
 #include "AI/PlayerAI.h"
+#include "AI/EnemyTorchbearerAI.h"
 #include "AI/EnemyAI.h"
 
 #include "Engine/World.h"
@@ -6,19 +7,19 @@
 #include "CollisionQueryParams.h"
 #include "CollisionShape.h"
 
-// Конструктор
+// пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 APlayerAI::APlayerAI()
 {
     PrimaryActorTick.bCanEverTick = false;
 }
 
-// Начало игры
+// пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ
 void APlayerAI::BeginPlay()
 {
     Super::BeginPlay();
 }
 
-// Поиск врагов в радиусе
+// пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ
 TArray<AEnemyAI*> APlayerAI::FindEnemiesInRadius()
 {
     TArray<AEnemyAI*> Enemies;
@@ -58,7 +59,7 @@ TArray<AEnemyAI*> APlayerAI::FindEnemiesInRadius()
     return Enemies;
 }
 
-// Выбор приоритетной цели
+// пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ
 AEnemyAI* APlayerAI::SelectTarget(
     const TArray<AEnemyAI*>& Enemies)
 {
@@ -77,12 +78,12 @@ AEnemyAI* APlayerAI::SelectTarget(
             continue;
         }
 
-        // Кто дальше продвинулся по маршруту?
+        // пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ?
         if (Enemy->RouteProgress > BestTarget->RouteProgress)
         {
             BestTarget = Enemy;
         }
-        // При одинаковом прогрессе выбираем меньший ID
+        // пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ ID
         else if (
             FMath::IsNearlyEqual(
                 Enemy->RouteProgress,
@@ -98,7 +99,7 @@ AEnemyAI* APlayerAI::SelectTarget(
     return BestTarget;
 }
 
-// Поиск и сохранение цели
+// пїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ
 void APlayerAI::FindTarget()
 {
     TArray<AEnemyAI*> Enemies = FindEnemiesInRadius();
@@ -106,10 +107,23 @@ void APlayerAI::FindTarget()
     Target = SelectTarget(Enemies);
 }
 
-// Реакция на смерть цели
+// пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ
 void APlayerAI::OnTargetDied()
 {
     Target = nullptr;
 
     FindTarget();
+}
+
+void APlayerAI::FindTowerTarget(bool bCanFireUnderLighting)
+{
+    TArray<AEnemyAI*> Enemies = FindEnemiesInRadius();
+    if (!bCanFireUnderLighting)
+    {
+        Enemies.RemoveAll([](const AEnemyAI* Enemy)
+        {
+            return !Enemy->IsA<AEnemyTorchbearerAI>();
+        });
+    }
+    Target = SelectTarget(Enemies);
 }

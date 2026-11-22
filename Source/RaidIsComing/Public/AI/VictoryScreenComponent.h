@@ -67,5 +67,6 @@ private:
     UFUNCTION()
     void HandleAllWavesCompleted();
 
+    FName ResolveNextLevel() const;
     void OpenLevelByName(FName LevelName);
 };

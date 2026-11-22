@@ -142,19 +142,21 @@ float ADayNightManager::CalculateTargetDarkness() const
         return Initial;
     }
 
-    if (NightWave > 0)
+    const int32 NightStart = FullNightWave > 0 ? FullNightWave : (NightWave > 0 ? NightWave : TotalWaves);
+    const int32 SunsetStart = FMath::Min(
+        StartDarkeningWave > 0 ? StartDarkeningWave : TotalWaves / 3 + 1, NightStart);
+    if (CurrentWave >= NightStart)
     {
-        return CurrentWave >= NightWave ? 1.0f : Initial;
+        return 1.0f;
     }
-
-    const int32 DayWaves = TotalWaves / 3;
-
-    if (CurrentWave <= DayWaves)
+    if (CurrentWave < SunsetStart)
     {
         return Initial;
     }
 
-    return FMath::Clamp(FinalDarkness, 0.0f, 1.0f);
+    const float Progress = float(CurrentWave - SunsetStart + 1) / float(NightStart - SunsetStart + 1);
+    const float TwilightLimit = FMath::Max(Initial, FMath::Clamp(FinalDarkness, 0.0f, 0.99f));
+    return FMath::Lerp(Initial, TwilightLimit, Progress);
 }
 
 void ADayNightManager::UpdateWaveState(int32 NewCurrentWave, int32 NewTotalWaves)

@@ -6,6 +6,7 @@
 #include "Construction/RICBuilding.h"
 
 #include "Blueprint/UserWidget.h"
+#include "Components/Button.h"
 #include "GameFramework/PlayerController.h"
 #include "Kismet/GameplayStatics.h"
 #include "Engine/World.h"
@@ -133,6 +134,21 @@ void UVictoryScreenComponent::ShowVictory()
 
     VictoryWidget->AddToViewport(100);
 
+    if (auto* Next = Cast<UButton>(VictoryWidget->GetWidgetFromName(TEXT("NextLevel"))))
+    {
+        Next->OnClicked.RemoveAll(VictoryWidget);
+        Next->OnClicked.AddUniqueDynamic(this, &ThisClass::LoadNextLevel);
+        if (ResolveNextLevel().IsNone())
+        {
+            Next->SetVisibility(ESlateVisibility::Collapsed);
+        }
+    }
+    if (auto* Menu = Cast<UButton>(VictoryWidget->GetWidgetFromName(TEXT("ToMenu"))))
+    {
+        Menu->OnClicked.RemoveAll(VictoryWidget);
+        Menu->OnClicked.AddUniqueDynamic(this, &ThisClass::LoadMainMenu);
+    }
+
     FInputModeUIOnly InputMode;
 
     InputMode.SetWidgetToFocus(
@@ -177,10 +193,19 @@ void UVictoryScreenComponent::RestartLevel()
 
 void UVictoryScreenComponent::LoadNextLevel()
 {
-    OpenLevelByName(NextLevelName);
+    OpenLevelByName(ResolveNextLevel());
 }
 
 void UVictoryScreenComponent::LoadMainMenu()
 {
-    OpenLevelByName(MainMenuLevelName);
+    OpenLevelByName(MainMenuLevelName.IsNone() ? FName(TEXT("/Game/Levels/Main_Menu")) : MainMenuLevelName);
+}
+
+FName UVictoryScreenComponent::ResolveNextLevel() const
+{
+    const FString Level = UGameplayStatics::GetCurrentLevelName(this);
+    if (Level == TEXT("Level_1")) return TEXT("/Game/Levels/Level_2");
+    if (Level == TEXT("Level_2")) return TEXT("/Game/Levels/Level_3");
+    if (Level == TEXT("Level_3")) return NAME_None;
+    return NextLevelName;
 }

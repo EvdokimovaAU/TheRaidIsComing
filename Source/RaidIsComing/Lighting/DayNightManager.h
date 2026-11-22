@@ -123,14 +123,15 @@ public:
     float NightSkyIntensity = 0.03f;
 
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Level")
-    int32 StartDarkeningWave = 3;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DayNight|Waves",
+        meta = (ClampMin = "0", DisplayName = "Волна начала заката", ToolTip = "0 — выбрать автоматически."))
+    int32 StartDarkeningWave = 0;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Level")
-    int32 FullNightWave = 6;
-
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "DayNight|Waves",
+        meta = (ClampMin = "0", DisplayName = "Волна полной ночи", ToolTip = "0 — использовать прежнюю настройку или последнюю волну."))
+    int32 FullNightWave = 0;
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "DayNight|Waves",
-        meta = (ClampMin = "0", DisplayName = "Волна наступления ночи", ToolTip = "0 — использовать автоматическое расписание."))
+        meta = (ClampMin = "0", DisplayName = "Волна наступления ночи (прежняя настройка)", AdvancedDisplay))
     int32 NightWave = 0;
 
 protected:

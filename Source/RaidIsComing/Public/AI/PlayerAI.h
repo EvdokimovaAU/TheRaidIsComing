@@ -16,27 +16,28 @@ public:
 
     APlayerAI();
 
-    // Радиус обнаружения противников
+    // пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AI|Detection")
     float DetectionRadius = 35.0f;
 
-    // Поиск всех живых врагов в радиусе
+    // пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ
     UFUNCTION(BlueprintCallable, Category = "AI|Target")
     TArray<AEnemyAI*> FindEnemiesInRadius();
 
-    // Выбор приоритетного противника
+    // пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ
     UFUNCTION(BlueprintCallable, Category = "AI|Target")
     AEnemyAI* SelectTarget(const TArray<AEnemyAI*>& Enemies);
 
-    // Найти и сохранить новую цель
+    // пїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ
     UFUNCTION(BlueprintCallable, Category = "AI|Target")
     void FindTarget();
 
-    // Реакция на смерть текущей цели
+    // пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅ
     UFUNCTION(BlueprintCallable, Category = "AI|Target")
     void OnTargetDied();
 
 protected:
 
     virtual void BeginPlay() override;
+    void FindTowerTarget(bool bCanFireUnderLighting);
 };

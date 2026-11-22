@@ -5,6 +5,7 @@
 
 #include "Lighting/DayNightManager.h"
 #include "Lighting/Searchlight.h"
+#include "AI/EnemyTorchbearerAI.h"
 
 #include "Components/SceneComponent.h"
 #include "Engine/World.h"
@@ -156,13 +157,7 @@ void AMageTowerAI::UpdateTower()
         return;
     }
 
-    if (!CanFireUnderLighting())
-    {
-        Target = nullptr;
-        return;
-    }
-
-    FindTarget();
+    FindTowerTarget(CanFireUnderLighting());
 
     UWorld* World = GetWorld();
 
@@ -202,7 +197,7 @@ void AMageTowerAI::Attack()
         return;
     }
 
-    if (!CanFireUnderLighting() || !CanAttack())
+    if (!CanAttack() || (!Target->IsA<AEnemyTorchbearerAI>() && !CanFireUnderLighting()))
     {
         return;
     }
