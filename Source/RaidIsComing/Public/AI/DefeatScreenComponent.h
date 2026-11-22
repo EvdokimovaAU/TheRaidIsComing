@@ -24,5 +24,8 @@ public:
     void ShowDefeat();
 
 private:
+    UFUNCTION()
+    void RetryLevel();
+
     bool bDefeatShown = false;
 };
