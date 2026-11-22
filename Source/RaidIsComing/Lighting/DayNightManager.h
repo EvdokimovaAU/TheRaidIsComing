@@ -79,6 +79,13 @@ public:
     UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "DayNight|Lights")
     TObjectPtr<ASkyLight> SkyLight;
 
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "DayNight|Brightness",
+        meta = (DisplayName = "Яркость днём", ClampMin = "0", UIMin = "0", UIMax = "2", Delta = "0.05"))
+    float DayBrightness = 1.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "DayNight|Brightness",
+        meta = (DisplayName = "Яркость ночью", ClampMin = "0", UIMin = "0", UIMax = "2", Delta = "0.05"))
+    float NightBrightness = 1.0f;
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "DayNight|Sun", meta = (ClampMin = "0"))
     float DaySunIntensity = 10.0f;
 

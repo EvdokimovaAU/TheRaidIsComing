@@ -17,4 +17,8 @@ public:
 
 protected:
     virtual void OnWidgetRebuilt() override;
+
+private:
+    UPROPERTY()
+    FSlateBrush SwordIcon;
 };

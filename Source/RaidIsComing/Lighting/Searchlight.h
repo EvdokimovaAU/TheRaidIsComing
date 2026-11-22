@@ -66,6 +66,11 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Searchlight|Settings")
     FLinearColor LightColor = FLinearColor::White;
 
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Searchlight|Aiming")
+    bool bUseCapitolSearchlight = true;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Searchlight|Settings", meta = (ClampMin = "1", Units = "cm"))
+    float CapitolBeamRange = 6500.0f;
     // Мышь задает только направление по кругу.
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Searchlight|Aiming")
     bool bRotateOnlyHorizontally = true;
@@ -97,5 +102,6 @@ private:
     void HandleNightStateChanged(bool bNight);
 
     void ApplySettings();
+    void PositionCapitolBeam();
     void RefreshActivation();
 };

@@ -185,6 +185,7 @@ void ARaidIsComingPlayerController::OnConstructionClick()
             bBarrierPreview = false;
             ConstructionComponent->SetPreviewHighlightTarget(nullptr);
         }
+
         return;
     }
     OpenBuildMenu();
@@ -346,37 +347,54 @@ void ARaidIsComingPlayerController::OnMouseInputStarted()
     {
         return;
     }
-    if (BuildMenuWidget)
-    {
-        CloseBuildMenu();
-        StartArcherTowerPreview();
-        return;
-    }
-
-    if (ConstructionComponent && !bConstructionModeActive && !ConstructionComponent->IsBuildingMode())
+    if (ConstructionComponent)
     {
         AActor* Target = ConstructionComponent->GetConstructionTargetUnderCursor(
             ArcherTowerClass, BarrierClass);
-        if (Target)
+        if (Target && !Target->IsA<ARICPassage>())
         {
+            CancelBuildingPreview();
             ConstructionComponent->SetPreviewHighlightTarget(Target);
-            if (Target->IsA<ARICPassage>())
+            StartArcherTowerPreview();
+            if (bConstructionModeActive)
             {
-                StartBarrierPreview();
+                OpenBuildMenu();
             }
-            else
+            if (!BuildMenuWidget)
             {
-                StartArcherTowerPreview();
+                CancelBuildingPreview();
             }
+            return;
+        }
 
+        if (!Target && (BuildMenuWidget || bConstructionModeActive || ConstructionComponent->IsBuildingMode()))
+        {
+            CancelBuildingPreview();
+            bSuppressDestinationUntilRelease = true;
+            return;
+        }
+
+        if (Target && (!bBarrierPreview || !ConstructionComponent->IsBuildingMode()))
+        {
+            CancelBuildingPreview();
+            ConstructionComponent->SetPreviewHighlightTarget(Target);
+            StartBarrierPreview();
             if (bConstructionModeActive)
             {
                 return;
             }
-
             bBarrierPreview = false;
             ConstructionComponent->SetPreviewHighlightTarget(nullptr);
         }
+        else if (Target && bBarrierPreview)
+        {
+            ConstructionComponent->SetPreviewHighlightTarget(Target);
+        }
+    }
+    if (bBarrierPreview && bConstructionModeActive)
+    {
+        OnConstructionClick();
+        return;
     }
 
     if (SetDestinationClickAction && DefaultMappingContext)
@@ -690,6 +708,7 @@ void ARaidIsComingPlayerController::OpenBuildMenu()
     BuildMenuWidget->OnTowerSelected.AddUniqueDynamic(this, &ThisClass::HandleTowerSelected);
     BuildMenuWidget->OnCancelled.AddUniqueDynamic(this, &ThisClass::HandleMenuCancelled);
     BuildMenuWidget->RefreshCosts(ArcherTowerClass, MageTowerClass);
+    BuildMenuWidget->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
     BuildMenuWidget->AddToViewport(10);
     PositionBuildMenu();
     if (!BuildMenuWidget) return;
@@ -744,7 +763,9 @@ void ARaidIsComingPlayerController::HandleTowerSelected(bool bMageTower)
     const FVector Position = PendingBuildPosition.GetValue();
     CloseBuildMenu();
     ConstructionComponent->TryPlaceAt(bMageTower ? MageTowerClass : ArcherTowerClass, Position);
-    StartArcherTowerPreview();
+    ConstructionComponent->CancelPreview();
+    ConstructionComponent->SetPreviewHighlightTarget(nullptr);
+    bConstructionModeActive = false;
 }
 
 void ARaidIsComingPlayerController::HandleMenuCancelled()

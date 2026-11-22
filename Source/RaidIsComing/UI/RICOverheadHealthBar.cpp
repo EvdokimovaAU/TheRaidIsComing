@@ -10,9 +10,9 @@
 
 URICOverheadHealthBar::URICOverheadHealthBar()
 {
-    static ConstructorHelpers::FObjectFinder<UObject> Base(TEXT("/Game/UI/Images/Buttons/Menu_Sprite_6.Menu_Sprite_6"));
-    static ConstructorHelpers::FObjectFinder<UObject> Green(TEXT("/Game/UI/Images/Buttons/Menu_Sprite_10.Menu_Sprite_10"));
-    static ConstructorHelpers::FObjectFinder<UObject> Red(TEXT("/Game/UI/Images/Buttons/Menu_Sprite_11.Menu_Sprite_11"));
+    static ConstructorHelpers::FObjectFinder<UObject> Base(TEXT("/Game/Assets/UI/Buttons/Menu_Sprite_6.Menu_Sprite_6"));
+    static ConstructorHelpers::FObjectFinder<UObject> Green(TEXT("/Game/Assets/UI/Buttons/Menu_Sprite_10.Menu_Sprite_10"));
+    static ConstructorHelpers::FObjectFinder<UObject> Red(TEXT("/Game/Assets/UI/Buttons/Menu_Sprite_11.Menu_Sprite_11"));
     Frame.SetResourceObject(Base.Object);
     FriendlyFill.SetResourceObject(Green.Object);
     EnemyFill.SetResourceObject(Red.Object);
@@ -23,7 +23,7 @@ URICOverheadHealthBar::URICOverheadHealthBar()
 }
 
 void URICOverheadHealthBar::Attach(AActor* Owner, FVector WorldAnchor, FIntPoint Size,
-    TAttribute<FVector2D> Health, bool bFriendly)
+    TAttribute<FVector2D> Health, bool bFriendly, bool bBarrier)
 {
     if (Owner->GetNetMode() == NM_DedicatedServer)
     {
@@ -34,11 +34,14 @@ void URICOverheadHealthBar::Attach(AActor* Owner, FVector WorldAnchor, FIntPoint
     Owner->AddInstanceComponent(Bar);
     Bar->SetupAttachment(Owner->GetRootComponent());
     Bar->SetRelativeLocation(Owner->GetActorTransform().InverseTransformPosition(WorldAnchor));
-    const float LabelWidth = 72.f;
+    const float LabelWidth = bBarrier ? 125.f : 72.f;
     Bar->SetDrawSize(FVector2D(Size.X + LabelWidth, FMath::Max(20, Size.Y)));
-    Bar->SetPivot(FVector2D(Size.X * 0.5f / (Size.X + LabelWidth), 1.f));
+    Bar->SetPivot(FVector2D(Size.X * 0.5f / (Size.X + LabelWidth), bBarrier ? 2.1f : 1.f));
     Bar->SetSlateWidget(
-        SNew(SHorizontalBox).Visibility(EVisibility::HitTestInvisible)
+        SNew(SHorizontalBox).Visibility_Lambda([Health]()
+        {
+            return Health.Get().X > 0.0 ? EVisibility::HitTestInvisible : EVisibility::Hidden;
+        })
         + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
         [
             SNew(SBox).WidthOverride(Size.X).HeightOverride(Size.Y)
@@ -53,7 +56,7 @@ void URICOverheadHealthBar::Attach(AActor* Owner, FVector WorldAnchor, FIntPoint
                         return FOptionalSize((Size.X - 4) * (HP.Y > 0 ? FMath::Clamp(HP.X / HP.Y, 0., 1.) : 0.));
                     })
                     [
-                        SNew(SImage).Image(bFriendly ? &Bar->FriendlyFill : &Bar->EnemyFill)
+                        SNew(SImage).Image(bFriendly || bBarrier ? &Bar->FriendlyFill : &Bar->EnemyFill)
                     ]
                 ]
             ]
@@ -62,10 +65,13 @@ void URICOverheadHealthBar::Attach(AActor* Owner, FVector WorldAnchor, FIntPoint
         [
             SNew(STextBlock).Font(FCoreStyle::GetDefaultFontStyle("Bold", 13))
             .ShadowOffset(FVector2D(1, 1)).ShadowColorAndOpacity(FLinearColor::Black)
-            .Text_Lambda([Health]()
+            .Text_Lambda([Health, bBarrier]()
             {
                 const FVector2D HP = Health.Get();
-                return FText::FromString(FString::Printf(TEXT("%d/%d"), FMath::CeilToInt32(HP.X), FMath::CeilToInt32(HP.Y)));
+                const FText Value = FText::FromString(FString::Printf(TEXT("%d/%d"),
+                    FMath::CeilToInt32(FMath::Clamp(HP.X, 0.0, FMath::Max(0.0, HP.Y))),
+                    FMath::CeilToInt32(FMath::Max(0.0, HP.Y))));
+                return bBarrier ? FText::Format(NSLOCTEXT("Health", "Barrier", "Купол {0}"), Value) : Value;
             })
         ]);
     Bar->RegisterComponent();

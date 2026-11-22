@@ -12,7 +12,7 @@ public:
     URICOverheadHealthBar();
 
     static void Attach(AActor* Owner, FVector WorldAnchor, FIntPoint Size,
-        TAttribute<FVector2D> Health, bool bFriendly);
+        TAttribute<FVector2D> Health, bool bFriendly, bool bBarrier = false);
 
 private:
     UPROPERTY()

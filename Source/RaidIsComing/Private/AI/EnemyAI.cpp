@@ -1,6 +1,7 @@
 
 #include "AI/EnemyAI.h"
 #include "UI/RICOverheadHealthBar.h"
+#include "AI/EnemyBarrier.h"
 
 #include "AI/GameBalanceManager.h"
 #include "AI/EnemySwordsmanAI.h"
@@ -55,6 +56,19 @@ void AEnemyAI::BeginPlay()
         {
             return FVector2D(CurrentHP, MaxHP);
         }), false);
+
+    if (auto* Mage = Cast<AEnemyMageAI>(this))
+    {
+        URICOverheadHealthBar::Attach(this, Anchor, FIntPoint(80, 11),
+            TAttribute<FVector2D>::CreateWeakLambda(Mage, [Mage]()
+            {
+                if (Mage->HasActiveBarrier())
+                {
+                    return FVector2D(Mage->ActiveBarrier->CurrentBarrierHP, Mage->BarrierHP);
+                }
+                return FVector2D::ZeroVector;
+            }), false, true);
+    }
 
     GetCharacterMovement()->MaxWalkSpeed = MovementSpeed;
 

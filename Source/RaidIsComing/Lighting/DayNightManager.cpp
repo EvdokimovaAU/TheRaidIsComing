@@ -213,12 +213,15 @@ void ADayNightManager::RefreshNightState()
 
 void ADayNightManager::ApplyLighting()
 {
+    const float Brightness = FMath::Lerp(FMath::Max(0.0f, DayBrightness),
+        FMath::Max(0.0f, NightBrightness), DarknessProgress);
+
     if (IsValid(SunLight.Get()))
     {
         UDirectionalLightComponent* Light = Cast<UDirectionalLightComponent>(SunLight->GetLightComponent());
         if (IsValid(Light))
         {
-            Light->SetIntensity(FMath::Max(0.0f, BlendDayTwilightNight(
+            Light->SetIntensity(Brightness * FMath::Max(0.0f, BlendDayTwilightNight(
                 DaySunIntensity, TwilightSunIntensity, NightSunIntensity, DarknessProgress)));
             Light->SetLightColor(BlendDayTwilightNight(
                 DaySunColor, TwilightSunColor, NightSunColor, DarknessProgress));
@@ -234,7 +237,7 @@ void ADayNightManager::ApplyLighting()
 
         if (IsValid(SkyComponent))
         {
-            const float DesiredIntensity = FMath::Max(
+            const float DesiredIntensity = Brightness * FMath::Max(
                 0.0f,
                 BlendDayTwilightNight(
                     DaySkyIntensity,

@@ -4,6 +4,7 @@
 #include "Construction/RICBuilding.h"
 
 #include "NiagaraComponent.h"
+#include "Components/StaticMeshComponent.h"
 #include "NiagaraFunctionLibrary.h"
 
 #include "Engine/World.h"
@@ -34,25 +35,29 @@ bool UBurningComponent::Ignite(AActor* InstigatorActor)
     FireInstigator = InstigatorActor;
 
     // Spawn Niagara fire on the building.
-    if (FireEffect)
+    if (FireEffect && Building->BuildingMesh && GetWorld()->GetNetMode() != NM_DedicatedServer)
     {
+        const FBoxSphereBounds Bounds = Building->BuildingMesh->Bounds;
+        const FVector FireBase = Bounds.Origin - FVector(0, 0, Bounds.BoxExtent.Z)
+            + Building->GetActorRotation().RotateVector(FireOffset);
         ActiveFire = UNiagaraFunctionLibrary::
             SpawnSystemAttached(
                 FireEffect,
-                Building->GetRootComponent(),
+                Building->BuildingMesh,
                 NAME_None,
-                FireOffset,
+                FireBase,
                 FRotator::ZeroRotator,
-                EAttachLocation::KeepRelativeOffset,
+                EAttachLocation::KeepWorldPosition,
                 false,
-                true,
+                false,
                 ENCPoolMethod::None,
                 false
             );
 
         if (ActiveFire)
         {
-            ActiveFire->SetRelativeScale3D(FireScale);
+            ActiveFire->SetWorldScale3D(FireScale);
+            ActiveFire->Activate();
         }
     }
 
