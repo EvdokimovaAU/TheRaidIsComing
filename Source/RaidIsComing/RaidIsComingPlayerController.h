@@ -72,7 +72,6 @@ protected:
 
 
     virtual void BeginPlay() override;
-    virtual bool InputKey(const FInputKeyEventArgs& Params) override;
     virtual void SetupInputComponent() override;
     void OnConstructionClick();
 
@@ -96,11 +95,6 @@ protected:
     TSubclassOf<URICBuildMenuWidget> BuildMenuWidgetClass;
 
 private:
-    TSharedPtr<class SWidget> PauseMenu;
-    void OpenPauseMenu();
-    void RemovePauseMenu();
-    void ResumeFromPause();
-
     friend class URICStartAttackButton;
 
     TWeakObjectPtr<AWaveManager> StartAttackWaveManager;

@@ -1,6 +1,5 @@
 
 #include "RICBuilding.h"
-#include "UI/RICOverheadHealthBar.h"
 
 #include "AI/GameBalanceManager.h"
 #include "Components/StaticMeshComponent.h"
@@ -90,17 +89,6 @@ void ARICBuilding::BeginPlay()
         CurrentHP = 0.0f;
     }
 
-    if (BuildingType == ERICBuildingType::Capitol)
-    {
-        FVector Center, Extent;
-        GetActorBounds(false, Center, Extent);
-        const float RoofClearance = FMath::Max(25.f, 0.5f * Extent.GetAbsMax());
-        URICOverheadHealthBar::Attach(this, Center + FVector::UpVector * (Extent.Z + RoofClearance),
-            FIntPoint(168, 16), TAttribute<FVector2D>::CreateWeakLambda(this, [this]()
-            {
-                return FVector2D(CurrentHP, MaxHP);
-            }), true);
-    }
     UE_LOG(
         LogTemp,
         Log,

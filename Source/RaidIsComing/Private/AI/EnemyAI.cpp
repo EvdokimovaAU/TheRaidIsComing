@@ -1,6 +1,5 @@
 
 #include "AI/EnemyAI.h"
-#include "UI/RICOverheadHealthBar.h"
 
 #include "AI/GameBalanceManager.h"
 #include "AI/EnemySwordsmanAI.h"
@@ -45,16 +44,8 @@ void AEnemyAI::BeginPlay()
 
     bKillRewardGranted = false;
 
-    // Initialize health from the level-specific maximum.
+    // Apply level-specific balance before movement.
     ApplyEnemyBalance();
-    CurrentHP = MaxHP;
-    const FVector Anchor = GetActorLocation() +
-        FVector::UpVector * (GetCapsuleComponent()->GetScaledCapsuleHalfHeight() + 15.f);
-    URICOverheadHealthBar::Attach(this, Anchor, FIntPoint(80, 11),
-        TAttribute<FVector2D>::CreateWeakLambda(this, [this]()
-        {
-            return FVector2D(CurrentHP, MaxHP);
-        }), false);
 
     GetCharacterMovement()->MaxWalkSpeed = MovementSpeed;
 
