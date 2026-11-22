@@ -142,6 +142,11 @@ float ADayNightManager::CalculateTargetDarkness() const
         return Initial;
     }
 
+    if (NightWave > 0)
+    {
+        return CurrentWave >= NightWave ? 1.0f : Initial;
+    }
+
     const int32 DayWaves = TotalWaves / 3;
 
     if (CurrentWave <= DayWaves)

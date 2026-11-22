@@ -129,6 +129,10 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Level")
     int32 FullNightWave = 6;
 
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "DayNight|Waves",
+        meta = (ClampMin = "0", DisplayName = "Волна наступления ночи", ToolTip = "0 — использовать автоматическое расписание."))
+    int32 NightWave = 0;
+
 protected:
     virtual void BeginPlay() override;
     virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
