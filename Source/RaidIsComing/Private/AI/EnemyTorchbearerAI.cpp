@@ -1,6 +1,8 @@
 
 #include "AI/EnemyTorchbearerAI.h"
 #include "AI/BurningComponent.h"
+#include "AIController.h"
+#include "Navigation/PathFollowingComponent.h"
 
 #include "Construction/RICBuilding.h"
 #include "Construction/RICBuildTypes.h"
@@ -329,6 +331,13 @@ void AEnemyTorchbearerAI::UpdateBehavior()
 
         StartIgnition(Wall);
         return;
+    }
+
+    // A navmesh rebuild can abort an otherwise successful move after it was issued.
+    if (const auto* AI = Cast<AAIController>(GetController());
+        AI && AI->GetMoveStatus() == EPathFollowingStatus::Idle && IsValid(CurrentTarget))
+    {
+        MoveToTarget();
     }
 }
 

@@ -442,7 +442,7 @@ void AEnemyAI::MoveToTarget()
 
     if (!IsValid(Path) ||
         !Path->IsValid() ||
-        Path->IsPartial())
+        (Path->IsPartial() && !IsA<AEnemyTorchbearerAI>()))
     {
         UE_LOG(LogTemp, Warning,
             TEXT("[EnemyAI] Complete path not found"));

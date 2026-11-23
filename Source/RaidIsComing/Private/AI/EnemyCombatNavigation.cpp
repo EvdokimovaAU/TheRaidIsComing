@@ -157,8 +157,8 @@ namespace EnemyCombatNavigation
         const float Radius = Capsule->GetScaledCapsuleRadius();
         const float HalfHeight = Capsule->GetScaledCapsuleHalfHeight();
         const float Offset = FMath::Max(Radius + 4.f, Range - AcceptanceRadius - 12.f);
-        struct FApproachPoint { FVector Nav; FVector Center; };
-        TArray<FApproachPoint> Candidates;
+        TArray<FVector> Candidates;
+        TSet<FVector> Seen;
         TInlineComponentArray<UPrimitiveComponent*> Components(Building);
         const auto* VisualSurface = GetVisualCapitolSurface(Building, Components);
         for (const auto* Component : Components)
@@ -193,7 +193,31 @@ namespace EnemyCombatNavigation
             Candidate.Z = Enemy->GetActorLocation().Z;
             FNavLocation Projected;
             if (!Nav->ProjectPointToNavigation(Candidate, Projected, FVector(40.f, 40.f, HalfHeight + 80.f))) continue;
-            FVector Position = Projected.Location + FVector(0.f, 0.f, HalfHeight);
+            if (GroupAnchor && FVector::Dist2D(Projected.Location, *GroupAnchor) > GroupRadius) continue;
+            bool bOccupied = false;
+            for (const FVector& Other : Reserved)
+                bOccupied |= FVector::Dist2D(Projected.Location, Other) < Separation;
+            if (bOccupied) continue;
+
+            bool bAlreadySeen;
+            Seen.Add(Projected.Location, &bAlreadySeen);
+            if (!bAlreadySeen) Candidates.Add(Projected.Location);
+        }
+        }
+        Candidates.Sort([Enemy](const FVector& A, const FVector& B)
+        {
+            return FVector::DistSquared2D(A, Enemy->GetActorLocation()) <
+                FVector::DistSquared2D(B, Enemy->GetActorLocation());
+        });
+        // The nearest surface in straight-line distance may require a long
+        // detour around the building. Compare complete path lengths so nearby
+        // companions do not choose opposite routes to nearly identical points.
+        double BestLength = TNumericLimits<double>::Max();
+        bool bFound = false;
+        for (const FVector& Candidate : Candidates)
+        {
+            if (FVector::Dist2D(Enemy->GetActorLocation(), Candidate) >= BestLength) break;
+            FVector Position = Candidate + FVector(0.f, 0.f, HalfHeight);
             // Recast's voxel height is not the floor height used by CharacterMovement.
             // Validate melee reach at the standing capsule's actual height, not
             // several centimetres above it (important around doors and sloped roofs).
@@ -203,41 +227,17 @@ namespace EnemyCombatNavigation
             Position.Z += (UCharacterMovementComponent::MIN_FLOOR_DIST +
                 UCharacterMovementComponent::MAX_FLOOR_DIST) * 0.5f - Floor.GetDistanceToFloor();
             if (!CanAttackFrom(Enemy, Position, Building, Range - AcceptanceRadius - 2.f)) continue;
-            if (GroupAnchor && FVector::Dist2D(Projected.Location, *GroupAnchor) > GroupRadius) continue;
-            bool bOccupied = false;
-            for (const FVector& Other : Reserved)
-                bOccupied |= FVector::Dist2D(Projected.Location, Other) < Separation;
-            if (bOccupied) continue;
-
             FCollisionQueryParams Params(SCENE_QUERY_STAT(EnemyAttackPosition), false, Enemy);
             FCollisionObjectQueryParams Objects;
             Objects.AddObjectTypesToQuery(ECC_WorldStatic);
             Objects.AddObjectTypesToQuery(ECC_WorldDynamic);
             if (Enemy->GetWorld()->OverlapAnyTestByObjectType(Position + FVector(0.f, 0.f, 2.f),
                 FQuat::Identity, Objects, FCollisionShape::MakeCapsule(Radius, HalfHeight - 2.f), Params)) continue;
-            Candidates.Add(FApproachPoint{Projected.Location, Position});
-        }
-        }
-        Candidates.Sort([Enemy](const FApproachPoint& A, const FApproachPoint& B)
-        {
-            return FVector::DistSquared2D(A.Nav, Enemy->GetActorLocation()) <
-                FVector::DistSquared2D(B.Nav, Enemy->GetActorLocation());
-        });
-        // The nearest surface in straight-line distance may require a long
-        // detour around the building. Compare complete path lengths so nearby
-        // companions do not choose opposite routes to nearly identical points.
-        double BestLength = TNumericLimits<double>::Max();
-        bool bFound = false;
-        for (const FApproachPoint& Point : Candidates)
-        {
-            const FVector& Candidate = Point.Nav;
-            if (FVector::Dist2D(Enemy->GetActorLocation(), Candidate) >= BestLength) break;
             auto* Path = Nav->FindPathToLocationSynchronously(Enemy->GetWorld(),
                 Enemy->GetActorLocation(), Candidate, Enemy);
             if (!IsValid(Path) || !Path->IsValid() || Path->IsPartial() || Path->PathPoints.IsEmpty() ||
                 FVector::Dist2D(Path->PathPoints[0], Enemy->GetActorLocation()) > AcceptanceRadius ||
                 FVector::Dist2D(Path->PathPoints.Last(), Candidate) > AcceptanceRadius) continue;
-            const FVector& Position = Point.Center;
             // Path following may stop anywhere in its acceptance circle. Door
             // openings make a ray-based surface query discontinuous, so validate
             // that circle rather than treating the exact goal as sufficient.

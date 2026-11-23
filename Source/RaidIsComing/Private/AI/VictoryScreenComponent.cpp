@@ -6,6 +6,7 @@
 #include "Construction/RICBuilding.h"
 
 #include "Blueprint/UserWidget.h"
+#include "Components/Button.h"
 #include "GameFramework/PlayerController.h"
 #include "Kismet/GameplayStatics.h"
 #include "Engine/World.h"
@@ -21,6 +22,10 @@ void UVictoryScreenComponent::BeginPlay()
     Super::BeginPlay();
 
     WaveManager = Cast<AWaveManager>(GetOwner());
+    const FString MapName = UGameplayStatics::GetCurrentLevelName(this);
+    if (MapName == TEXT("Level_1")) NextLevelName = TEXT("/Game/Levels/Level_2");
+    else if (MapName == TEXT("Level_2")) NextLevelName = TEXT("/Game/Levels/Level_3");
+    else if (MapName == TEXT("Level_3")) NextLevelName = NAME_None;
 
     if (!IsValid(WaveManager))
     {
@@ -110,9 +115,9 @@ void UVictoryScreenComponent::ShowVictory()
 
     if (!VictoryWidgetClass)
     {
-        UE_LOG(LogTemp, Error,
-            TEXT("[Victory] VictoryWidgetClass not assigned"));
-        return;
+        VictoryWidgetClass = LoadClass<UUserWidget>(nullptr,
+            TEXT("/Game/UI/All_WBP/WBP_VictoryScreen.WBP_VictoryScreen_C"));
+        if (!VictoryWidgetClass) return;
     }
 
     UUserWidget* NewWidget =
@@ -130,6 +135,19 @@ void UVictoryScreenComponent::ShowVictory()
 
     VictoryWidget = NewWidget;
     bVictoryShown = true;
+
+    if (auto* Button = Cast<UButton>(VictoryWidget->GetWidgetFromName(TEXT("NextLevel"))))
+    {
+        Button->OnClicked.Clear();
+        Button->OnClicked.AddDynamic(this, &UVictoryScreenComponent::LoadNextLevel);
+        Button->SetIsEnabled(!NextLevelName.IsNone());
+        if (NextLevelName.IsNone()) Button->SetVisibility(ESlateVisibility::Collapsed);
+    }
+    if (auto* Button = Cast<UButton>(VictoryWidget->GetWidgetFromName(TEXT("ToMenu"))))
+    {
+        Button->OnClicked.Clear();
+        Button->OnClicked.AddDynamic(this, &UVictoryScreenComponent::LoadMainMenu);
+    }
 
     VictoryWidget->AddToViewport(100);
 
@@ -162,12 +180,7 @@ void UVictoryScreenComponent::OpenLevelByName(
         return;
     }
 
-    UGameplayStatics::SetGamePaused(this, false);
-
-    UGameplayStatics::OpenLevel(
-        this,
-        LevelName
-    );
+    RICLevelTravel::OpenLevel(UGameplayStatics::GetPlayerController(this, 0), LevelName);
 }
 
 void UVictoryScreenComponent::RestartLevel()
@@ -177,10 +190,13 @@ void UVictoryScreenComponent::RestartLevel()
 
 void UVictoryScreenComponent::LoadNextLevel()
 {
-    OpenLevelByName(NextLevelName);
+    if (bVictoryShown && !NextLevelName.IsNone()) OpenLevelByName(NextLevelName);
 }
 
 void UVictoryScreenComponent::LoadMainMenu()
 {
-    OpenLevelByName(MainMenuLevelName);
+    if (MainMenuLevelName.IsNone())
+        RICLevelTravel::OpenMainMenu(UGameplayStatics::GetPlayerController(this, 0));
+    else
+        OpenLevelByName(MainMenuLevelName);
 }

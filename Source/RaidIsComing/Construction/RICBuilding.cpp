@@ -4,6 +4,8 @@
 
 #include "AI/GameBalanceManager.h"
 #include "Components/StaticMeshComponent.h"
+#include "Components/BoxComponent.h"
+#include "NavAreas/NavArea_Null.h"
 
 ARICBuilding::ARICBuilding()
 {
@@ -24,7 +26,8 @@ ARICBuilding::ARICBuilding()
 void ARICBuilding::PreRegisterAllComponents()
 {
     if (BuildingType == ERICBuildingType::ArcherTower ||
-        BuildingType == ERICBuildingType::MageTower)
+        BuildingType == ERICBuildingType::MageTower ||
+        BuildingType == ERICBuildingType::Barrier)
     {
         BuildingMesh->SetCanEverAffectNavigation(false);
     }
@@ -99,6 +102,24 @@ void ARICBuilding::BeginPlay()
     else
     {
         CurrentHP = 0.0f;
+    }
+
+    if (BuildingType == ERICBuildingType::Barrier && BuildingMesh->GetStaticMesh() &&
+        BuildingMesh->IsCollisionEnabled())
+    {
+        // An area modifier updates walkability without exporting the fence mesh
+        // as new geometry on every placement and removal.
+        const FBoxSphereBounds MeshBounds = BuildingMesh->CalcBounds(FTransform::Identity);
+        auto* NavigationObstacle = NewObject<UBoxComponent>(this, TEXT("BarrierNavigationObstacle"));
+        NavigationObstacle->SetupAttachment(BuildingMesh);
+        NavigationObstacle->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+        NavigationObstacle->SetGenerateOverlapEvents(false);
+        NavigationObstacle->SetBoxExtent(MeshBounds.BoxExtent + FVector(0, 0, 30));
+        NavigationObstacle->SetRelativeLocation(MeshBounds.Origin);
+        NavigationObstacle->bDynamicObstacle = true;
+        NavigationObstacle->SetAreaClassOverride(UNavArea_Null::StaticClass());
+        NavigationObstacle->SetCanEverAffectNavigation(true);
+        NavigationObstacle->RegisterComponent();
     }
 
     if (BuildingType == ERICBuildingType::Capitol)

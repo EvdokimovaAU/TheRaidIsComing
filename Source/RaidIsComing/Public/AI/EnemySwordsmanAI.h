@@ -170,6 +170,7 @@ private:
     FVector RejectedFromPosition = FVector::ZeroVector;
     mutable float NextCapitolRouteCheck = 0.f;
     mutable bool bCachedCapitolRoute = false;
+    mutable FVector CachedCapitolDestination = FVector::ZeroVector;
     bool IsEscortMovementControlled() const;
     bool IsEscortCombatBlocked() const;
     TMap<TWeakObjectPtr<ARICBuilding>, float> RejectedWalls;

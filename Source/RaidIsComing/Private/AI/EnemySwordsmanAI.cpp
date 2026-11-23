@@ -423,7 +423,11 @@ void AEnemySwordsmanAI::MoveToTarget()
     {
         if (!Mage->FindEscortMarchDestination(this, Destination)) return;
     }
-    else if (!EnemyCombatNavigation::FindApproach(this, Building, AttackRange, Destination)) return;
+    else
+    {
+        if (!HasFreePathToCapitol()) return;
+        Destination = CachedCapitolDestination;
+    }
     if (StartCapitolLaneMove(Destination)) return;
     const auto Result = AI->MoveToLocation(Destination, EnemyCombatNavigation::AcceptanceRadius,
         false, true, false, false, nullptr, false);
@@ -616,9 +620,8 @@ bool AEnemySwordsmanAI::HasFreePathToCapitol() const
     const float Now = GetWorld()->GetTimeSeconds();
     if (Now < NextCapitolRouteCheck) return bCachedCapitolRoute;
     NextCapitolRouteCheck = Now + 1.f;
-    FVector Destination;
     bCachedCapitolRoute = EnemyCombatNavigation::FindApproach(const_cast<AEnemySwordsmanAI*>(this),
-        Cast<ARICBuilding>(Capitol.Get()), AttackRange, Destination);
+        Cast<ARICBuilding>(Capitol.Get()), AttackRange, CachedCapitolDestination);
     return bCachedCapitolRoute;
 }
 

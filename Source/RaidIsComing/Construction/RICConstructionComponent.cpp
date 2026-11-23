@@ -771,11 +771,11 @@ bool URICConstructionComponent::TryPlacePreview()
         SpawnParams.Owner = GetOwner();
         SpawnParams.SpawnCollisionHandlingOverride =
             ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+        SpawnParams.TransformScaleMethod = ESpawnActorScaleMethod::OverrideRootScale;
 
         ARICBuilding* Barrier = World->SpawnActor<ARICBuilding>(
             SelectedBuildingClass.Get(),
-            PlacementTransform.GetLocation(),
-            PlacementTransform.Rotator(),
+            PlacementTransform,
             SpawnParams);
 
         if (!IsValid(Barrier) || Barrier->IsActorBeingDestroyed())
@@ -784,9 +784,6 @@ bool URICConstructionComponent::TryPlacePreview()
                 TEXT("Barrier rejected: could not spawn barrier."));
             return false;
         }
-
-        // Как у башен: итоговый масштаб должен совпадать с превью.
-        Barrier->SetActorTransform(PlacementTransform);
 
         UStaticMeshComponent* Mesh = Barrier->BuildingMesh.Get();
         if (!IsValid(Passage) || Passage->IsActorBeingDestroyed()

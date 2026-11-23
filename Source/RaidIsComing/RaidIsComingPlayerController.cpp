@@ -83,12 +83,14 @@ void ARaidIsComingPlayerController::OpenPauseMenu()
     };
     AddButton(NSLOCTEXT("Pause", "Restart", "Перезапустить уровень"), FOnClicked::CreateWeakLambda(this, [this]()
     {
+        RemovePauseMenu();
         RICLevelTravel::RestartCurrentLevel(this);
         return FReply::Handled();
     }));
     AddButton(NSLOCTEXT("Pause", "Menu", "Выйти в меню"), FOnClicked::CreateWeakLambda(this, [this]()
     {
-        UGameplayStatics::OpenLevel(this, TEXT("/Game/Levels/Main_Menu"));
+        RemovePauseMenu();
+        RICLevelTravel::OpenMainMenu(this);
         return FReply::Handled();
     }));
     AddButton(NSLOCTEXT("Pause", "Quit", "Выйти из игры"), FOnClicked::CreateWeakLambda(this, [this]()
