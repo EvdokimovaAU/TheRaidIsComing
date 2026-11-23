@@ -93,6 +93,7 @@ public:
     UFUNCTION(BlueprintCallable, Category = "AI|Balance")
     virtual void ApplyEnemyBalance();
 
+    FVector CapitolRouteGoal(const FVector& Goal, TArray<FVector>* Route = nullptr);
     virtual void Die() override;
 
 protected:
@@ -103,6 +104,7 @@ protected:
     ) override;
 
 private:
+    int32 LevelTwoLaneSign = 0;
     FTimerHandle MovementStartTimer;
     FTimerHandle NavigationRetryTimer;
 

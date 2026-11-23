@@ -252,6 +252,32 @@ void AEnemyAI::ScheduleNavigationRetry()
 
 // MOVE TO TARGET
 
+FVector AEnemyAI::CapitolRouteGoal(const FVector& Goal, TArray<FVector>* Route)
+{
+    if (!GetWorld()->GetName().EndsWith(TEXT("Level_2"))) return Goal;
+    const FVector Start = GetActorLocation();
+    // Each island on Level_2 has a northern and a southern passage.
+    const double Direction = Start.X >= 0 ? 1.0 : -1.0;
+    const double IslandX = Direction * 1400.0;
+    if (Start.X * Direction <= 1580.0 || Goal.X * Direction >= 1400.0) return Goal;
+
+    if (!LevelTwoLaneSign) LevelTwoLaneSign = FMath::RandBool() ? 1 : -1;
+    auto* Nav = FNavigationSystem::GetCurrent<UNavigationSystemV1>(GetWorld());
+    FNavLocation Lane;
+    if (!Nav || !Nav->ProjectPointToNavigation(FVector(IslandX, LevelTwoLaneSign * 650.0, Start.Z),
+        Lane, FVector(80, 80, 250))) return Goal;
+    auto* First = Nav->FindPathToLocationSynchronously(GetWorld(), Start, Lane.Location, this);
+    auto* Last = Nav->FindPathToLocationSynchronously(GetWorld(), Lane.Location, Goal, this);
+    if (!IsValid(First) || !First->IsValid() || First->IsPartial() || First->PathPoints.Num() < 2 ||
+        !IsValid(Last) || !Last->IsValid() || Last->IsPartial() || Last->PathPoints.Num() < 2) return Goal;
+    if (Route)
+    {
+        *Route = First->PathPoints;
+        Route->Append(Last->PathPoints.GetData() + 1, Last->PathPoints.Num() - 1);
+    }
+    return Lane.Location;
+}
+
 void AEnemyAI::MoveToTarget()
 {
     if (!IsAlive() || !IsValid(CurrentTarget))
@@ -396,9 +422,11 @@ void AEnemyAI::MoveToTarget()
 
     // START MOVEMENT
 
+    const FVector Goal = CurrentTarget == Capitol ? CapitolRouteGoal(TargetNavLocation.Location) : TargetNavLocation.Location;
+
     const EPathFollowingRequestResult::Type Result =
         EnemyController->MoveToLocation(
-            TargetNavLocation.Location,
+            Goal,
             AcceptanceRadius,
             true,
             true,
@@ -408,6 +436,7 @@ void AEnemyAI::MoveToTarget()
             true
         );
 
+    if (!Goal.Equals(TargetNavLocation.Location)) ScheduleNavigationRetry();
     switch (Result)
     {
     case EPathFollowingRequestResult::RequestSuccessful:
