@@ -10,6 +10,7 @@
 #include "NiagaraComponent.h"
 #include "Animation/AnimMontage.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "Components/StaticMeshComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
@@ -117,8 +118,12 @@ float AEnemyTorchbearerAI::GetDistanceToBuilding(
 
     const FVector MyLocation = GetActorLocation();
 
-    const FBox Bounds =
-        Building->GetComponentsBoundingBox();
+    FBox Bounds = Building->GetComponentsBoundingBox();
+    if (Building->BuildingType == ERICBuildingType::Capitol && IsValid(Building->BuildingMesh) &&
+        !Building->BuildingMesh->IsQueryCollisionEnabled() && Building->BuildingMesh->GetStaticMesh())
+    {
+        Bounds = Building->BuildingMesh->Bounds.GetBox();
+    }
 
     if (!Bounds.IsValid)
     {

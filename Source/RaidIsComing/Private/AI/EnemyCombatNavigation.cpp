@@ -26,10 +26,30 @@ namespace EnemyCombatNavigation
             Component->GetCollisionResponseToChannel(ECC_Pawn) == ECR_Block;
     }
 
+    // Some Capitol blueprints use a visual mesh with collision disabled.
+    // In that case its local footprint supplies the melee surface and attack slots.
+    static const UStaticMeshComponent* GetVisualCapitolSurface(const ARICBuilding* Building,
+        const TInlineComponentArray<UPrimitiveComponent*>& Components)
+    {
+        if (Building->BuildingType != ERICBuildingType::Capitol ||
+            !IsValid(Building->BuildingMesh) || !Building->BuildingMesh->GetStaticMesh()) return nullptr;
+        for (const auto* Component : Components)
+            if (IsCombatCollision(Component)) return nullptr;
+        return Building->BuildingMesh;
+    }
+
     bool GetSurfacePoint(const FVector& Position, const ARICBuilding* Building, FVector& Point)
     {
         if (!IsValid(Building)) return false;
         TInlineComponentArray<UPrimitiveComponent*> Components(Building);
+        if (const auto* Mesh = GetVisualCapitolSurface(Building, Components))
+        {
+            const FTransform& Transform = Mesh->GetComponentTransform();
+            const FVector Local = Transform.InverseTransformPosition(Position);
+            const FBox Box = Mesh->CalcBounds(FTransform::Identity).GetBox();
+            Point = Transform.TransformPosition(Box.GetClosestPointTo(Local));
+            return true;
+        }
         float BestDistance = TNumericLimits<float>::Max();
         bool bFound = false;
         for (auto* Component : Components)
@@ -140,9 +160,10 @@ namespace EnemyCombatNavigation
         struct FApproachPoint { FVector Nav; FVector Center; };
         TArray<FApproachPoint> Candidates;
         TInlineComponentArray<UPrimitiveComponent*> Components(Building);
+        const auto* VisualSurface = GetVisualCapitolSurface(Building, Components);
         for (const auto* Component : Components)
         {
-        if (!IsCombatCollision(Component)) continue;
+        if (Component != VisualSurface && !IsCombatCollision(Component)) continue;
         const FBox Bounds = Component->CalcBounds(FTransform::Identity).GetBox();
         const FVector Center = Bounds.GetCenter();
         const FVector Extent = Bounds.GetExtent();
