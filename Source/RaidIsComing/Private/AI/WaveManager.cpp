@@ -23,7 +23,7 @@ void AWaveManager::BeginPlay()
 
     UE_LOG(LogTemp, Warning,
         TEXT("[WaveManager] Initialized. Total waves: %d"),
-        Waves.Num());
+        GetTotalWaves());
 }
 
 // END PLAY
@@ -73,7 +73,7 @@ void AWaveManager::StartNextWaveInternal()
 
     const int32 NextIndex = CurrentWaveIndex + 1;
 
-    if (!Waves.IsValidIndex(NextIndex))
+    if (NextIndex >= GetTotalWaves())
     {
         UE_LOG(LogTemp, Warning,
             TEXT("[WaveManager] No more waves"));
@@ -264,7 +264,7 @@ void AWaveManager::CheckWaveCompletion()
         NextWaveTimerHandle);
 
     const bool bLastWave =
-        CurrentWaveIndex >= Waves.Num() - 1;
+        CurrentWaveIndex >= GetTotalWaves() - 1;
 
     LevelPhase = bLastWave
         ? ERICLevelPhase::Completed
@@ -317,5 +317,5 @@ int32 AWaveManager::GetCurrentWaveNumber() const
 
 int32 AWaveManager::GetTotalWaves() const
 {
-    return Waves.Num();
+    return WaveCountLimit > 0 ? FMath::Min(WaveCountLimit, Waves.Num()) : Waves.Num();
 }

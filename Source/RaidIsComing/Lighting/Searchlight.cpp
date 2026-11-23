@@ -1,6 +1,9 @@
 #include "Searchlight.h"
 
 #include "DayNightManager.h"
+#include "InputCoreTypes.h"
+#include "Construction/RICBuilding.h"
+#include "EngineUtils.h"
 #include "Components/SceneComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/SpotLightComponent.h"
@@ -187,6 +190,11 @@ void ASearchlight::OnConstruction(const FTransform& Transform)
 void ASearchlight::BeginPlay()
 {
     Super::BeginPlay();
+    if (bUseCapitolSearchlight)
+    {
+        PositionCapitolBeam();
+        SpotLight->SetCastShadows(false);
+    }
     ApplySettings();
 
     if (IsValid(DayNightManager))
@@ -197,19 +205,13 @@ void ASearchlight::BeginPlay()
     {
         UE_LOG(LogTemp, Warning, TEXT("Searchlight %s: assign DayNightManager on the level instance."), *GetName());
     }
-    if (bRotateOnlyHorizontally)
+    if (bRotateOnlyHorizontally && !bUseCapitolSearchlight)
     {
         const FRotator InitialRotation = SpotLight->GetComponentRotation();
         SpotLight->SetWorldRotation(FRotator(
             FMath::Clamp(FixedPitch, -89.0f, -1.0f), InitialRotation.Yaw, 0.0f));
     }
     RefreshActivation();
-
-    // Activation is controlled by the day/night manager. No keyboard bindings.
-    if (bFollowMouseCursor)
-    {
-        UpdateAimFromCursor();
-    }
 }
 
 void ASearchlight::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -234,6 +236,12 @@ void ASearchlight::UpdateAimFromCursor()
             return;
         }
         InputPlayerController = Controller;
+    }
+
+    if (!Controller->IsInputKeyDown(EKeys::LeftShift) && !Controller->IsInputKeyDown(EKeys::RightShift))
+    {
+        bHasAimLocation = false;
+        return;
     }
 
     FVector RayOrigin;
@@ -261,9 +269,21 @@ void ASearchlight::ApplySettings()
     const float Angle = FMath::Clamp(ConeHalfAngle, 1.0f, 80.0f);
     SpotLight->SetInnerConeAngle(Angle * 0.7f);
     SpotLight->SetOuterConeAngle(Angle);
-    SpotLight->SetAttenuationRadius(FMath::Max(1.0f, MaxRange));
+    SpotLight->SetAttenuationRadius(FMath::Max(1.0f, bUseCapitolSearchlight ? CapitolBeamRange : MaxRange));
 }
 
+void ASearchlight::PositionCapitolBeam()
+{
+    for (TActorIterator<ARICBuilding> Building(GetWorld()); Building; ++Building)
+    {
+        if (Building->BuildingType == ERICBuildingType::Capitol && Building->BuildingMesh)
+        {
+            const FBoxSphereBounds Bounds = Building->BuildingMesh->Bounds;
+            SpotLight->SetWorldLocation(Bounds.Origin + FVector(0, 0, Bounds.BoxExtent.Z + 320.0f));
+            return;
+        }
+    }
+}
 bool ASearchlight::IsLightActive() const
 {
     return IsValid(DayNightManager)
@@ -309,8 +329,7 @@ void ASearchlight::Tick(float DeltaSeconds)
         RefreshActivation();
         return;
     }
-    // Follow the mouse continuously while the light is active.
-    // The existing rotation-speed interpolation below remains unchanged.
+    // Shift changes the aim without changing the light state.
     if (bFollowMouseCursor)
     {
         UpdateAimFromCursor();
@@ -322,7 +341,7 @@ void ASearchlight::Tick(float DeltaSeconds)
     const FVector Direction = AimLocation - SpotLight->GetComponentLocation();
     FRotator CurrentRotation = SpotLight->GetComponentRotation();
     FRotator TargetRotation = CurrentRotation;
-    if (bRotateOnlyHorizontally)
+    if (bRotateOnlyHorizontally && !bUseCapitolSearchlight)
     {
         // Near the tower center the cursor has no stable azimuth: retain yaw.
         if (Direction.SizeSquared2D() > 1.0)
@@ -339,6 +358,11 @@ void ASearchlight::Tick(float DeltaSeconds)
     {
         if (Direction.IsNearlyZero()) return;
         TargetRotation = Direction.Rotation();
+    }
+    if (bUseCapitolSearchlight)
+    {
+        SpotLight->SetWorldRotation(FMath::RInterpTo(CurrentRotation, TargetRotation, DeltaSeconds, 18.0f));
+        return;
     }
     SpotLight->SetWorldRotation(FMath::RInterpConstantTo(
         CurrentRotation, TargetRotation, DeltaSeconds,

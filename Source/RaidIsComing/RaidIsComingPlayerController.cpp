@@ -7,6 +7,7 @@
 #include "UI/RICBuildMenuWidget.h"
 #include "UI/RICStartAttackButton.h"
 #include "Blueprint/WidgetLayoutLibrary.h"
+#include "Components/WidgetComponent.h"
 #include "Engine/Engine.h"
 #include "EngineUtils.h"
 #include "Construction/RICConstructionComponent.h"
@@ -53,6 +54,21 @@ ARaidIsComingPlayerController::ARaidIsComingPlayerController()
 void ARaidIsComingPlayerController::BeginPlay()
 {
     Super::BeginPlay();
+    if (IsLocalPlayerController())
+    {
+        for (TObjectIterator<UWidgetComponent> Widget; Widget; ++Widget)
+        {
+            const UClass* WidgetClass = Widget->GetWidgetClass();
+            if (Widget->GetWorld() == GetWorld() && WidgetClass &&
+                WidgetClass->GetPathName() == TEXT("/Game/UI/WBP_Arrow.WBP_Arrow_C"))
+            {
+                // Level instances may override the tutorial Blueprint defaults.
+                Widget->SetBackgroundColor(FLinearColor::Transparent);
+                Widget->SetBlendMode(EWidgetBlendMode::Transparent);
+                Widget->SetMaterial(0, nullptr);
+            }
+        }
+    }
     ConstructionComponent->OnPlacementRejected.AddUniqueDynamic(this, &ThisClass::HandlePlacementRejected);
 }
 
@@ -75,6 +91,7 @@ void ARaidIsComingPlayerController::OnConstructionClick()
             bBarrierPreview = false;
             ConstructionComponent->SetPreviewHighlightTarget(nullptr);
         }
+
         return;
     }
     OpenBuildMenu();
@@ -221,37 +238,54 @@ void ARaidIsComingPlayerController::OnMouseInputStarted()
     {
         return;
     }
-    if (BuildMenuWidget)
-    {
-        CloseBuildMenu();
-        StartArcherTowerPreview();
-        return;
-    }
-
-    if (ConstructionComponent && !bConstructionModeActive && !ConstructionComponent->IsBuildingMode())
+    if (ConstructionComponent)
     {
         AActor* Target = ConstructionComponent->GetConstructionTargetUnderCursor(
             ArcherTowerClass, BarrierClass);
-        if (Target)
+        if (Target && !Target->IsA<ARICPassage>())
         {
+            CancelBuildingPreview();
             ConstructionComponent->SetPreviewHighlightTarget(Target);
-            if (Target->IsA<ARICPassage>())
+            StartArcherTowerPreview();
+            if (bConstructionModeActive)
             {
-                StartBarrierPreview();
+                OpenBuildMenu();
             }
-            else
+            if (!BuildMenuWidget)
             {
-                StartArcherTowerPreview();
+                CancelBuildingPreview();
             }
+            return;
+        }
 
+        if (!Target && (BuildMenuWidget || bConstructionModeActive || ConstructionComponent->IsBuildingMode()))
+        {
+            CancelBuildingPreview();
+            bSuppressDestinationUntilRelease = true;
+            return;
+        }
+
+        if (Target && (!bBarrierPreview || !ConstructionComponent->IsBuildingMode()))
+        {
+            CancelBuildingPreview();
+            ConstructionComponent->SetPreviewHighlightTarget(Target);
+            StartBarrierPreview();
             if (bConstructionModeActive)
             {
                 return;
             }
-
             bBarrierPreview = false;
             ConstructionComponent->SetPreviewHighlightTarget(nullptr);
         }
+        else if (Target && bBarrierPreview)
+        {
+            ConstructionComponent->SetPreviewHighlightTarget(Target);
+        }
+    }
+    if (bBarrierPreview && bConstructionModeActive)
+    {
+        OnConstructionClick();
+        return;
     }
 
     if (SetDestinationClickAction && DefaultMappingContext)
@@ -565,6 +599,7 @@ void ARaidIsComingPlayerController::OpenBuildMenu()
     BuildMenuWidget->OnTowerSelected.AddUniqueDynamic(this, &ThisClass::HandleTowerSelected);
     BuildMenuWidget->OnCancelled.AddUniqueDynamic(this, &ThisClass::HandleMenuCancelled);
     BuildMenuWidget->RefreshCosts(ArcherTowerClass, MageTowerClass);
+    BuildMenuWidget->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
     BuildMenuWidget->AddToViewport(10);
     PositionBuildMenu();
     if (!BuildMenuWidget) return;
@@ -619,7 +654,9 @@ void ARaidIsComingPlayerController::HandleTowerSelected(bool bMageTower)
     const FVector Position = PendingBuildPosition.GetValue();
     CloseBuildMenu();
     ConstructionComponent->TryPlaceAt(bMageTower ? MageTowerClass : ArcherTowerClass, Position);
-    StartArcherTowerPreview();
+    ConstructionComponent->CancelPreview();
+    ConstructionComponent->SetPreviewHighlightTarget(nullptr);
+    bConstructionModeActive = false;
 }
 
 void ARaidIsComingPlayerController::HandleMenuCancelled()

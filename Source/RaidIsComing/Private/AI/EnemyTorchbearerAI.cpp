@@ -6,6 +6,8 @@
 #include "Construction/RICBuildTypes.h"
 
 #include "Animation/AnimInstance.h"
+#include "Components/PointLightComponent.h"
+#include "NiagaraComponent.h"
 #include "Animation/AnimMontage.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -65,6 +67,19 @@ void AEnemyTorchbearerAI::ApplyEnemyBalance()
 void AEnemyTorchbearerAI::BeginPlay()
 {
     Super::BeginPlay();
+
+    if (auto* Flame = FindComponentByClass<UNiagaraComponent>(); Flame && Flame->GetAsset() &&
+        GetNetMode() != NM_DedicatedServer)
+    {
+        auto* Glow = NewObject<UPointLightComponent>(this);
+        Glow->SetupAttachment(Flame);
+        Glow->SetCastShadows(false);
+        Glow->SetLightColor(FLinearColor(1.f, 0.32f, 0.07f));
+        Glow->SetIntensityUnits(ELightUnits::Lumens);
+        Glow->SetIntensity(85.f);
+        Glow->SetAttenuationRadius(190.f);
+        Glow->RegisterComponent();
+    }
 
     GetWorldTimerManager().SetTimer(
         BehaviorTimer,
@@ -355,7 +370,7 @@ void AEnemyTorchbearerAI::StartIgnition(
     bPreparingIgnition = true;
 
     FVector Direction =
-        Building->GetActorLocation() -
+        Building->GetComponentsBoundingBox().GetCenter() -
         GetActorLocation();
 
     Direction.Z = 0.f;
@@ -537,7 +552,7 @@ void AEnemyTorchbearerAI::MoveToTarget()
 
 void AEnemyTorchbearerAI::Die()
 {
-    if (!IsAlive())
+    if (bIsDead)
         return;
 
     GetWorldTimerManager().ClearTimer(

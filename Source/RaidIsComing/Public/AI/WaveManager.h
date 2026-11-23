@@ -91,6 +91,10 @@ public:
         Category = "Waves")
     TArray<FWaveData> Waves;
 
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Waves",
+        meta = (ClampMin = "0", DisplayName = "Количество волн", ToolTip = "0 — использовать все настроенные волны."))
+    int32 WaveCountLimit = 0;
+
     UPROPERTY(EditAnywhere, BlueprintReadWrite,
         Category = "Waves|Timing",
         meta = (ClampMin = "0.1"))

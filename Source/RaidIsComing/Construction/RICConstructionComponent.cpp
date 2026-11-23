@@ -803,10 +803,18 @@ bool URICConstructionComponent::TryPlacePreview()
         // Blueprint мог изменить меш при создании.
         // Проверяем реальные размеры в координатах прохода:
         // так поворот прохода вокруг Z не мешает проверке границ.
-        const FTransform MeshInPassage =
-            Mesh->GetComponentTransform().GetRelativeTransform(
-                Passage->GetActorTransform());
-        const FBoxSphereBounds LocalBounds = Mesh->CalcBounds(MeshInPassage);
+        const FTransform& PassageTransform = Passage->GetActorTransform();
+        FBoxSphereBounds LocalBounds = Mesh->CalcBounds(
+            Mesh->GetComponentTransform().GetRelativeTransform(PassageTransform));
+        if (!LocalBounds.Origin.ContainsNaN() && !LocalBounds.BoxExtent.ContainsNaN())
+        {
+            const FVector AnchorOffset(LocalBounds.Origin.X, LocalBounds.Origin.Y,
+                LocalBounds.Origin.Z - LocalBounds.BoxExtent.Z);
+            Barrier->SetActorLocation(Barrier->GetActorLocation()
+                - PassageTransform.TransformVector(AnchorOffset));
+            LocalBounds = Mesh->CalcBounds(
+                Mesh->GetComponentTransform().GetRelativeTransform(PassageTransform));
+        }
         const FBoxSphereBounds WorldBounds =
             Mesh->CalcBounds(Mesh->GetComponentTransform());
 
@@ -818,6 +826,8 @@ bool URICConstructionComponent::TryPlacePreview()
             && !WorldBounds.BoxExtent.ContainsNaN()
             && LocalBounds.BoxExtent.X > 0.0
             && LocalBounds.BoxExtent.Y > 0.0
+            && FMath::Abs(LocalBounds.Origin.X) <= Tolerance
+            && FMath::Abs(LocalBounds.Origin.Y) <= Tolerance
             && FMath::Abs(LocalBounds.Origin.X) + LocalBounds.BoxExtent.X
             <= Passage->HalfSize.X + Tolerance
             && FMath::Abs(LocalBounds.Origin.Y) + LocalBounds.BoxExtent.Y

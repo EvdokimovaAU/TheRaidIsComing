@@ -79,6 +79,13 @@ public:
     UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category = "DayNight|Lights")
     TObjectPtr<ASkyLight> SkyLight;
 
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "DayNight|Brightness",
+        meta = (DisplayName = "Яркость днём", ClampMin = "0", UIMin = "0", UIMax = "2", Delta = "0.05"))
+    float DayBrightness = 1.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "DayNight|Brightness",
+        meta = (DisplayName = "Яркость ночью", ClampMin = "0", UIMin = "0", UIMax = "2", Delta = "0.05"))
+    float NightBrightness = 1.0f;
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "DayNight|Sun", meta = (ClampMin = "0"))
     float DaySunIntensity = 10.0f;
 
@@ -121,6 +128,10 @@ public:
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Level")
     int32 FullNightWave = 6;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "DayNight|Waves",
+        meta = (ClampMin = "0", DisplayName = "Волна наступления ночи", ToolTip = "0 — использовать автоматическое расписание."))
+    int32 NightWave = 0;
 
 protected:
     virtual void BeginPlay() override;
