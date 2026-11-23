@@ -93,10 +93,11 @@ public:
     UFUNCTION(BlueprintCallable, Category = "AI|Balance")
     virtual void ApplyEnemyBalance();
 
-    FVector CapitolRouteGoal(const FVector& Goal, TArray<FVector>* Route = nullptr);
+    bool FindCapitolLane(const FVector& Goal, FVector& Waypoint, TArray<FVector>* Route = nullptr);
     virtual void Die() override;
 
 protected:
+    bool StartCapitolLaneMove(const FVector& Goal);
     virtual void BeginPlay() override;
 
     virtual void EndPlay(
@@ -104,7 +105,9 @@ protected:
     ) override;
 
 private:
-    int32 LevelTwoLaneSign = 0;
+    int32 ChosenLane = INDEX_NONE;
+    bool bPassedLane = false;
+    FDelegateHandle LaneFinished;
     FTimerHandle MovementStartTimer;
     FTimerHandle NavigationRetryTimer;
 

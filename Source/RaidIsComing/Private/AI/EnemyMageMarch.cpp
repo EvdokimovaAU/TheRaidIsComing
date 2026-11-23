@@ -95,7 +95,8 @@ bool AEnemyMageAI::BuildEscortRoute()
     auto* Path = Nav ? Nav->FindPathToLocationSynchronously(GetWorld(), Leader->GetActorLocation(), Goal, Leader) : nullptr;
     if (!IsValid(Path) || !Path->IsValid() || Path->IsPartial() || Path->PathPoints.Num() < 2) return false;
     EscortRoute = Path->PathPoints;
-    Leader->CapitolRouteGoal(Goal, &EscortRoute);
+    FVector Waypoint;
+    Leader->FindCapitolLane(Goal, Waypoint, &EscortRoute);
     EscortRouteDistances = {0.f};
     for (int32 Index = 1; Index < EscortRoute.Num(); ++Index)
         EscortRouteDistances.Add(EscortRouteDistances.Last() + FVector::Dist2D(EscortRoute[Index - 1], EscortRoute[Index]));

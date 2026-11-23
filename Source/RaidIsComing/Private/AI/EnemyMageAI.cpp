@@ -1305,7 +1305,12 @@ void AEnemyMageAI::RequestMoveToActor(AActor* MoveTarget, float InAcceptanceRadi
     if (MoveTarget == Capitol.Get())
     {
         if (!EnsureMarchAnchor()) return;
-        Destination = CapitolRouteGoal(MarchAnchor);
+        Destination = MarchAnchor;
+        if (StartCapitolLaneMove(Destination))
+        {
+            CurrentMoveTarget = MoveTarget;
+            return;
+        }
     }
     else if (!EnemyCombatNavigation::FindApproach(this, Building, WallAttackDistance, Destination)) return;
     CurrentMoveTarget = MoveTarget;
