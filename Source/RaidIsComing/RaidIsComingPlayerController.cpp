@@ -2,12 +2,17 @@
 
 #include "RaidIsComingPlayerController.h"
 #include "AI/WaveManager.h"
+#include "Lighting/DayNightManager.h"
 #include "RICLevelTravel.h"
 
 #include "Construction/RICBuilding.h"
 #include "UI/RICBuildMenuWidget.h"
 #include "UI/RICStartAttackButton.h"
 #include "Blueprint/WidgetLayoutLibrary.h"
+#include "Blueprint/GameViewportSubsystem.h"
+#include "Blueprint/UserWidget.h"
+#include "Blueprint/WidgetTree.h"
+#include "Components/PanelWidget.h"
 #include "Components/WidgetComponent.h"
 #include "Engine/Engine.h"
 #include "EngineUtils.h"
@@ -19,6 +24,7 @@
 #include "Components/InputComponent.h"
 #include "Engine/LocalPlayer.h"
 #include "Engine/World.h"
+#include "TimerManager.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "GameFramework/Pawn.h"
@@ -168,6 +174,28 @@ void ARaidIsComingPlayerController::BeginPlay()
     Super::BeginPlay();
     if (IsLocalPlayerController())
     {
+        if (UGameViewportSubsystem* Viewport = UGameViewportSubsystem::Get())
+        {
+            Viewport->OnWidgetAdded.AddUObject(this, &ThisClass::HandleTrainingWidgetAdded);
+        }
+        for (TObjectIterator<UUserWidget> Widget; Widget; ++Widget)
+        {
+            if (Widget->GetWorld() == GetWorld() && Widget->IsInViewport())
+            {
+                HandleTrainingWidgetAdded(*Widget, Widget->GetOwningLocalPlayer());
+            }
+        }
+        for (TActorIterator<AWaveManager> It(GetWorld()); It; ++It)
+        {
+            It->OnWaveStarted.AddUniqueDynamic(this, &ThisClass::FinishIntroTraining);
+        }
+        if (UGameplayStatics::GetCurrentLevelName(this) == TEXT("Level_1"))
+        {
+            for (TActorIterator<ADayNightManager> It(GetWorld()); It; ++It)
+            {
+                It->OnNightStateChanged.AddUniqueDynamic(this, &ThisClass::ShowSearchlightTraining);
+            }
+        }
         for (TObjectIterator<UWidgetComponent> Widget; Widget; ++Widget)
         {
             const UClass* WidgetClass = Widget->GetWidgetClass();
@@ -182,6 +210,62 @@ void ARaidIsComingPlayerController::BeginPlay()
         }
     }
     ConstructionComponent->OnPlacementRejected.AddUniqueDynamic(this, &ThisClass::HandlePlacementRejected);
+}
+
+void ARaidIsComingPlayerController::HandleTrainingWidgetAdded(UWidget* Widget, ULocalPlayer* WidgetPlayer)
+{
+    auto* Training = Cast<UUserWidget>(Widget);
+    if (!Training || Training->GetWorld() != GetWorld() ||
+        (WidgetPlayer && WidgetPlayer != GetLocalPlayer()) ||
+        Training->GetClass()->GetPathName() != TEXT("/Game/UI/WBP_Training.WBP_Training_C")) return;
+
+    if (Training == IntroTraining) return;
+    if (!bIntroTrainingShown)
+    {
+        bIntroTrainingShown = true;
+        IntroTraining = Training;
+        return;
+    }
+    Training->SetVisibility(ESlateVisibility::Collapsed);
+    GetWorldTimerManager().SetTimerForNextTick(FTimerDelegate::CreateUObject(Training, &UUserWidget::RemoveFromParent));
+}
+
+void ARaidIsComingPlayerController::FinishIntroTraining(int32)
+{
+    bIntroTrainingShown = true;
+    if (!IsValid(IntroTraining) || UGameplayStatics::GetCurrentLevelName(this) != TEXT("Level_1")) return;
+    if (const auto* Lighting = Cast<ADayNightManager>(
+        UGameplayStatics::GetActorOfClass(this, ADayNightManager::StaticClass()));
+        Lighting && Lighting->IsNight()) return;
+    IntroTraining->SetVisibility(ESlateVisibility::Collapsed);
+}
+
+void ARaidIsComingPlayerController::ShowSearchlightTraining(bool bNight)
+{
+    if (!bNight || !IsValid(IntroTraining)) return;
+    if (!IntroTraining->IsInViewport()) IntroTraining->AddToViewport();
+    IntroTraining->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+    // The intro and the searchlight share one Blueprint. Detach the intro
+    // elements so its timers cannot make the mouse and build hints reappear.
+    UWidget* ShiftHint = IntroTraining->GetWidgetFromName(TEXT("Shift"));
+    TArray<UWidget*> TrainingWidgets;
+    IntroTraining->WidgetTree->GetAllWidgets(TrainingWidgets);
+    for (UWidget* Widget : TrainingWidgets)
+    {
+        if (Widget != ShiftHint && !Widget->IsA<UPanelWidget>()) Widget->RemoveFromParent();
+    }
+    // Update the original Blueprint immediately instead of waiting for its timer.
+    if (UFunction* CheckNight = IntroTraining->FindFunction(TEXT("CheckNight"));
+        CheckNight && CheckNight->ParmsSize == 0)
+    {
+        IntroTraining->ProcessEvent(CheckNight, nullptr);
+    }
+    if (ShiftHint)
+    {
+        ShiftHint->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+        UE_LOG(LogTemp, Log, TEXT("[Training] Searchlight visual: %s"), *ShiftHint->GetName());
+    }
+    UE_LOG(LogTemp, Log, TEXT("[Training] Restored %s for searchlight"), *IntroTraining->GetClass()->GetName());
 }
 
 void ARaidIsComingPlayerController::OnConstructionClick()
@@ -801,6 +885,10 @@ void ARaidIsComingPlayerController::HandlePlacementRejected(const FText& Reason)
 
 void ARaidIsComingPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+    if (UGameViewportSubsystem* Viewport = UGameViewportSubsystem::Get())
+    {
+        Viewport->OnWidgetAdded.RemoveAll(this);
+    }
     ClearStartAttackButton();
     CloseBuildMenu();
     RemovePauseMenu();

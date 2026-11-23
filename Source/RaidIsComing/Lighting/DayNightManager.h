@@ -153,6 +153,7 @@ private:
     float GetInitialDarkness() const;
     float CalculateTargetDarkness() const;
     bool bLightingInitialized = false;
+    bool bIsFirstLevel = false;
     void ApplyLighting();
     void RefreshNightState();
 };

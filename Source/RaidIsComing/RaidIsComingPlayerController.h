@@ -96,6 +96,17 @@ protected:
     TSubclassOf<URICBuildMenuWidget> BuildMenuWidgetClass;
 
 private:
+    bool bIntroTrainingShown = false;
+    UPROPERTY(Transient)
+    TObjectPtr<class UUserWidget> IntroTraining;
+    void HandleTrainingWidgetAdded(class UWidget* Widget, class ULocalPlayer* WidgetPlayer);
+
+    UFUNCTION()
+    void FinishIntroTraining(int32 WaveNumber);
+
+    UFUNCTION()
+    void ShowSearchlightTraining(bool bNight);
+
     TSharedPtr<class SWidget> PauseMenu;
     void OpenPauseMenu();
     void RemovePauseMenu();

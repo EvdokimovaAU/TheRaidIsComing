@@ -6,7 +6,9 @@
 #include "Construction/RICBuilding.h"
 
 #include "Blueprint/UserWidget.h"
+#include "Blueprint/WidgetTree.h"
 #include "Components/Button.h"
+#include "Components/TextBlock.h"
 #include "GameFramework/PlayerController.h"
 #include "Kismet/GameplayStatics.h"
 #include "Engine/World.h"
@@ -141,7 +143,18 @@ void UVictoryScreenComponent::ShowVictory()
         Button->OnClicked.Clear();
         Button->OnClicked.AddDynamic(this, &UVictoryScreenComponent::LoadNextLevel);
         Button->SetIsEnabled(!NextLevelName.IsNone());
-        if (NextLevelName.IsNone()) Button->SetVisibility(ESlateVisibility::Collapsed);
+        if (NextLevelName.IsNone())
+        {
+            Button->SetVisibility(ESlateVisibility::Collapsed);
+        }
+        else
+        {
+            auto* Label = VictoryWidget->WidgetTree->ConstructWidget<UTextBlock>();
+            Label->SetText(NSLOCTEXT("Victory", "Continue", "Продолжить"));
+            Button->SetContent(Label);
+            UE_LOG(LogTemp, Log, TEXT("[Victory] Continue button label: %s"),
+                *Label->GetText().ToString());
+        }
     }
     if (auto* Button = Cast<UButton>(VictoryWidget->GetWidgetFromName(TEXT("ToMenu"))))
     {

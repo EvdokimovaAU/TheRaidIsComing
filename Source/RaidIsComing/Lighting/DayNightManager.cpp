@@ -6,15 +6,18 @@
 #include "Components/SkyLightComponent.h"
 #include "Engine/DirectionalLight.h"
 #include "Engine/SkyLight.h"
+#include "Kismet/GameplayStatics.h"
 
 namespace
 {
     template<typename T>
     T BlendDayTwilightNight(const T& Day, const T& Twilight, const T& Night, float Progress)
     {
-        return Progress <= 0.5f
-            ? FMath::Lerp(Day, Twilight, Progress * 2.0f)
-            : FMath::Lerp(Twilight, Night, (Progress - 0.5f) * 2.0f);
+        const bool bBeforeTwilight = Progress <= 0.5f;
+        const float Alpha = bBeforeTwilight ? Progress * 2.0f : (Progress - 0.5f) * 2.0f;
+        const float SmoothAlpha = FMath::SmoothStep(0.0f, 1.0f, Alpha);
+        return bBeforeTwilight ? FMath::Lerp(Day, Twilight, SmoothAlpha)
+                              : FMath::Lerp(Twilight, Night, SmoothAlpha);
     }
 }
 
@@ -28,6 +31,7 @@ ADayNightManager::ADayNightManager()
 void ADayNightManager::BeginPlay()
 {
     Super::BeginPlay();
+    bIsFirstLevel = UGameplayStatics::GetCurrentLevelName(this) == TEXT("Level_1");
 
     if (IsValid(WaveManager.Get()))
     {
@@ -144,7 +148,8 @@ float ADayNightManager::CalculateTargetDarkness() const
 
     if (NightWave > 0)
     {
-        return CurrentWave >= NightWave ? 1.0f : Initial;
+        if (CurrentWave >= NightWave) return 1.0f;
+        return CurrentWave == NightWave - 1 ? FMath::Max(Initial, 0.5f) : Initial;
     }
 
     const int32 DayWaves = TotalWaves / 3;
@@ -154,7 +159,9 @@ float ADayNightManager::CalculateTargetDarkness() const
         return Initial;
     }
 
-    return FMath::Clamp(FinalDarkness, 0.0f, 1.0f);
+    const float Final = FMath::Clamp(FinalDarkness, 0.0f, 1.0f);
+    const int32 FirstNightWave = FMath::Max(DayWaves + 2, 2 * TotalWaves / 3 + 1);
+    return CurrentWave < FirstNightWave ? FMath::Clamp(0.5f, Initial, FMath::Max(Initial, Final)) : Final;
 }
 
 void ADayNightManager::UpdateWaveState(int32 NewCurrentWave, int32 NewTotalWaves)
@@ -184,7 +191,11 @@ void ADayNightManager::StartDarknessTransition(float NewTarget)
     TargetDarkness = NewTarget;
     TransitionElapsed = 0.0f;
     ActiveDuration = FMath::IsFinite(TransitionDuration)
-        ? FMath::Max(0.01f, TransitionDuration) : 3.0f;
+        ? FMath::Max(8.0f, TransitionDuration) : 8.0f;
+    if (bIsFirstLevel && TargetDarkness >= 1.0f)
+    {
+        ActiveDuration = 4.0f;
+    }
     SetActorTickEnabled(true);
 }
 
@@ -207,7 +218,9 @@ void ADayNightManager::Tick(float DeltaSeconds)
 
 void ADayNightManager::RefreshNightState()
 {
-    const bool bNewNight = DarknessProgress >= 1.0f;
+    // On the first level the searchlight becomes usable during late dusk.
+    const float NightThreshold = bIsFirstLevel && TargetDarkness >= 1.0f ? 0.8f : 1.0f;
+    const bool bNewNight = DarknessProgress >= NightThreshold;
     if (bNewNight != bIsNight)
     {
         bIsNight = bNewNight;
@@ -227,7 +240,7 @@ void ADayNightManager::ApplyLighting()
         if (IsValid(Light))
         {
             Light->SetIntensity(Brightness * FMath::Max(0.0f, BlendDayTwilightNight(
-                DaySunIntensity, TwilightSunIntensity, NightSunIntensity, DarknessProgress)));
+                DaySunIntensity * 1.25f, TwilightSunIntensity * 1.2f, NightSunIntensity, DarknessProgress)));
             Light->SetLightColor(BlendDayTwilightNight(
                 DaySunColor, TwilightSunColor, NightSunColor, DarknessProgress));
             const float Pitch = BlendDayTwilightNight(
@@ -245,8 +258,8 @@ void ADayNightManager::ApplyLighting()
             const float DesiredIntensity = Brightness * FMath::Max(
                 0.0f,
                 BlendDayTwilightNight(
-                    DaySkyIntensity,
-                    TwilightSkyIntensity,
+                    DaySkyIntensity * 1.25f,
+                    TwilightSkyIntensity * 1.2f,
                     NightSkyIntensity,
                     DarknessProgress));
 
