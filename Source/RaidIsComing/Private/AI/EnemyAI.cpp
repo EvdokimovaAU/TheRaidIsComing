@@ -8,6 +8,7 @@
 #include "AI/EnemyMageAI.h"
 #include "AI/EnemyTorchbearerAI.h"
 
+#include "Kismet/GameplayStatics.h"
 #include "AIController.h"
 #include "NavigationSystem.h"
 #include "NavigationPath.h"
@@ -252,30 +253,97 @@ void AEnemyAI::ScheduleNavigationRetry()
 
 // MOVE TO TARGET
 
-FVector AEnemyAI::CapitolRouteGoal(const FVector& Goal, TArray<FVector>* Route)
+bool AEnemyAI::FindCapitolLane(const FVector& Goal, FVector& Waypoint, TArray<FVector>* Route)
 {
-    if (!GetWorld()->GetName().EndsWith(TEXT("Level_2"))) return Goal;
-    const FVector Start = GetActorLocation();
-    // Each island on Level_2 has a northern and a southern passage.
-    const double Direction = Start.X >= 0 ? 1.0 : -1.0;
-    const double IslandX = Direction * 1400.0;
-    if (Start.X * Direction <= 1580.0 || Goal.X * Direction >= 1400.0) return Goal;
+    const FString Level = UGameplayStatics::GetCurrentLevelName(this);
+    if (bPassedLane || (Level != TEXT("Level_2") && Level != TEXT("Level_3"))) return false;
 
-    if (!LevelTwoLaneSign) LevelTwoLaneSign = FMath::RandBool() ? 1 : -1;
+    const FVector Start = GetActorLocation();
     auto* Nav = FNavigationSystem::GetCurrent<UNavigationSystemV1>(GetWorld());
-    FNavLocation Lane;
-    if (!Nav || !Nav->ProjectPointToNavigation(FVector(IslandX, LevelTwoLaneSign * 650.0, Start.Z),
-        Lane, FVector(80, 80, 250))) return Goal;
-    auto* First = Nav->FindPathToLocationSynchronously(GetWorld(), Start, Lane.Location, this);
-    auto* Last = Nav->FindPathToLocationSynchronously(GetWorld(), Lane.Location, Goal, this);
-    if (!IsValid(First) || !First->IsValid() || First->IsPartial() || First->PathPoints.Num() < 2 ||
-        !IsValid(Last) || !Last->IsValid() || Last->IsPartial() || Last->PathPoints.Num() < 2) return Goal;
+    if (!Nav || !IsValid(Capitol)) return false;
+    auto* Direct = Nav->FindPathToLocationSynchronously(GetWorld(), Start, Goal, this);
+    if (!IsValid(Direct) || !Direct->IsValid() || Direct->IsPartial()) return false;
+
+    // Use the Capitol center so its attack slot cannot bias the side of the fork.
+    const FVector Forward = (Capitol->GetActorLocation() - Start).GetSafeNormal2D();
+    const FVector Right(-Forward.Y, Forward.X, 0);
+    double Bend = 0;
+    FVector Corner = Start;
+    for (int32 Index = 1; Index + 1 < Direct->PathPoints.Num(); ++Index)
+    {
+        const FVector Point = Direct->PathPoints[Index];
+        if (FVector::Dist2D(Point, Goal) < 250.0) continue;
+        const double Offset = FVector::DotProduct(Point - Start, Right);
+        if (FMath::Abs(Offset) > FMath::Abs(Bend))
+        {
+            Corner = Point;
+            Bend = Offset;
+        }
+    }
+    if (ChosenLane == INDEX_NONE) ChosenLane = FMath::RandRange(0, 1);
+    FVector Candidate;
+    if (FMath::Abs(Bend) < 150.0)
+    {
+        // Level_3's outer approach is open. Split the approach evenly
+        // around its centerline before the two sides converge at the Capitol.
+        const double Distance = FVector::Dist2D(Start, Goal);
+        if (Level != TEXT("Level_3") || Distance < 900.0) return false;
+        const double Offset = FMath::Min(350.0, Distance * 0.15);
+        Candidate = (Start + Goal) * 0.5 + Right * (ChosenLane ? Offset : -Offset);
+    }
+    else if ((ChosenLane == 1) == (Bend > 0))
+    {
+        bPassedLane = true;
+        return false;
+    }
+    else
+    {
+        Candidate = Corner - Right * (2.0 * Bend);
+    }
+    FNavLocation Opposite;
+    if (!Nav->ProjectPointToNavigation(Candidate, Opposite, FVector(180, 180, 250)))
+        return false;
+    auto* First = Nav->FindPathToLocationSynchronously(GetWorld(), Start, Opposite.Location, this);
+    auto* Last = Nav->FindPathToLocationSynchronously(GetWorld(), Opposite.Location, Goal, this);
+    for (auto* Leg : { First, Last })
+        if (!IsValid(Leg) || !Leg->IsValid() || Leg->IsPartial() || Leg->PathPoints.Num() < 2) return false;
+
+    const double ApproachAllowance = 2.0 * FVector::Dist2D(Goal, Capitol->GetActorLocation());
+    if (First->GetPathLength() + Last->GetPathLength() > 1.15 * Direct->GetPathLength() + ApproachAllowance)
+        return false;
+    Waypoint = Opposite.Location;
     if (Route)
     {
         *Route = First->PathPoints;
-        Route->Append(Last->PathPoints.GetData() + 1, Last->PathPoints.Num() - 1);
+        const auto& Tail = Last->PathPoints;
+        Route->Append(Tail.GetData() + 1, Tail.Num() - 1);
     }
-    return Lane.Location;
+    return true;
+}
+
+bool AEnemyAI::StartCapitolLaneMove(const FVector& Goal)
+{
+    FVector Waypoint;
+    if (!FindCapitolLane(Goal, Waypoint)) return false;
+    auto* AI = Cast<AAIController>(GetController());
+    auto* Following = AI ? AI->GetPathFollowingComponent() : nullptr;
+    if (!Following) return false;
+    if (AI->MoveToLocation(Waypoint, 20.f, false, true, false, false, nullptr, false)
+        != EPathFollowingRequestResult::RequestSuccessful) return false;
+
+    const auto Request = Following->GetCurrentRequestId();
+    LaneFinished = Following->OnRequestFinished.AddWeakLambda(this,
+        [this, Following, Request](FAIRequestID Finished, const FPathFollowingResult& Result)
+        {
+            if (Finished != Request) return;
+            Following->OnRequestFinished.Remove(LaneFinished);
+            if (!Result.IsInterrupted() && IsAlive())
+            {
+                bPassedLane = true;
+                GetWorldTimerManager().SetTimerForNextTick(this, &AEnemyAI::MoveToTarget);
+            }
+        });
+    return true;
 }
 
 void AEnemyAI::MoveToTarget()
@@ -422,11 +490,11 @@ void AEnemyAI::MoveToTarget()
 
     // START MOVEMENT
 
-    const FVector Goal = CurrentTarget == Capitol ? CapitolRouteGoal(TargetNavLocation.Location) : TargetNavLocation.Location;
+    if (CurrentTarget == Capitol && StartCapitolLaneMove(TargetNavLocation.Location)) return;
 
     const EPathFollowingRequestResult::Type Result =
         EnemyController->MoveToLocation(
-            Goal,
+            TargetNavLocation.Location,
             AcceptanceRadius,
             true,
             true,
@@ -436,7 +504,6 @@ void AEnemyAI::MoveToTarget()
             true
         );
 
-    if (!Goal.Equals(TargetNavLocation.Location)) ScheduleNavigationRetry();
     switch (Result)
     {
     case EPathFollowingRequestResult::RequestSuccessful:

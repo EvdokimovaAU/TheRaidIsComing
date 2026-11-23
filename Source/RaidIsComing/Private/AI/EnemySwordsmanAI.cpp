@@ -424,7 +424,7 @@ void AEnemySwordsmanAI::MoveToTarget()
         if (!Mage->FindEscortMarchDestination(this, Destination)) return;
     }
     else if (!EnemyCombatNavigation::FindApproach(this, Building, AttackRange, Destination)) return;
-    Destination = CapitolRouteGoal(Destination);
+    if (StartCapitolLaneMove(Destination)) return;
     const auto Result = AI->MoveToLocation(Destination, EnemyCombatNavigation::AcceptanceRadius,
         false, true, false, false, nullptr, false);
     if (Result == EPathFollowingRequestResult::RequestSuccessful)
