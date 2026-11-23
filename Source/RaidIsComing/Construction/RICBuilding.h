@@ -69,5 +69,6 @@ public:
     float CurrentHP = 0.0f;
 
 protected:
+    virtual void PreRegisterAllComponents() override;
     virtual void BeginPlay() override;
 };

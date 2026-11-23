@@ -21,6 +21,17 @@ ARICBuilding::ARICBuilding()
     SetCanBeDamaged(false);
 }
 
+void ARICBuilding::PreRegisterAllComponents()
+{
+    if (BuildingType == ERICBuildingType::ArcherTower ||
+        BuildingType == ERICBuildingType::MageTower)
+    {
+        BuildingMesh->SetCanEverAffectNavigation(false);
+    }
+
+    Super::PreRegisterAllComponents();
+}
+
 bool ARICBuilding::IsDestructible() const
 {
     return BuildingType == ERICBuildingType::Barrier ||
