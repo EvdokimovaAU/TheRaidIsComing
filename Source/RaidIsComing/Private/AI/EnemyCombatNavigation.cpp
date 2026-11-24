@@ -157,7 +157,11 @@ namespace EnemyCombatNavigation
         const float Radius = Capsule->GetScaledCapsuleRadius();
         const float HalfHeight = Capsule->GetScaledCapsuleHalfHeight();
         const float Offset = FMath::Max(Radius + 4.f, Range - AcceptanceRadius - 12.f);
-        TArray<FVector> Candidates;
+        const FVector Start = Enemy->GetActorLocation();
+        const ANavigationData* NavData = Nav->GetNavDataForProps(Enemy->GetNavAgentPropertiesRef(), Start);
+        if (!NavData) return false;
+        TArray<FNavLocation> Candidates;
+        TMap<NavNodeRef, bool> ReachablePolygons;
         TSet<FVector> Seen;
         TInlineComponentArray<UPrimitiveComponent*> Components(Building);
         const auto* VisualSurface = GetVisualCapitolSurface(Building, Components);
@@ -192,7 +196,7 @@ namespace EnemyCombatNavigation
                 Transform.TransformVectorNoScale(Outward).GetSafeNormal2D() * Gap;
             Candidate.Z = Enemy->GetActorLocation().Z;
             FNavLocation Projected;
-            if (!Nav->ProjectPointToNavigation(Candidate, Projected, FVector(40.f, 40.f, HalfHeight + 80.f))) continue;
+            if (!Nav->ProjectPointToNavigation(Candidate, Projected, FVector(40.f, 40.f, HalfHeight + 80.f), NavData)) continue;
             if (GroupAnchor && FVector::Dist2D(Projected.Location, *GroupAnchor) > GroupRadius) continue;
             bool bOccupied = false;
             for (const FVector& Other : Reserved)
@@ -201,22 +205,34 @@ namespace EnemyCombatNavigation
 
             bool bAlreadySeen;
             Seen.Add(Projected.Location, &bAlreadySeen);
-            if (!bAlreadySeen) Candidates.Add(Projected.Location);
+            if (!bAlreadySeen) Candidates.Add(Projected);
         }
         }
-        Candidates.Sort([Enemy](const FVector& A, const FVector& B)
+        Candidates.Sort([Enemy](const FNavLocation& A, const FNavLocation& B)
         {
-            return FVector::DistSquared2D(A, Enemy->GetActorLocation()) <
-                FVector::DistSquared2D(B, Enemy->GetActorLocation());
+            return FVector::DistSquared2D(A.Location, Enemy->GetActorLocation()) <
+                FVector::DistSquared2D(B.Location, Enemy->GetActorLocation());
         });
         // The nearest surface in straight-line distance may require a long
         // detour around the building. Compare complete path lengths so nearby
         // companions do not choose opposite routes to nearly identical points.
         double BestLength = TNumericLimits<double>::Max();
         bool bFound = false;
-        for (const FVector& Candidate : Candidates)
+        for (const FNavLocation& Projected : Candidates)
         {
-            if (FVector::Dist2D(Enemy->GetActorLocation(), Candidate) >= BestLength) break;
+            const FVector& Candidate = Projected.Location;
+            if (FVector::Dist2D(Start, Candidate) >= BestLength) break;
+            // All slots on a disconnected polygon can be discarded together.
+            if (Projected.NodeRef != INVALID_NAVNODEREF)
+            {
+                if (!ReachablePolygons.Contains(Projected.NodeRef))
+                {
+                    FPathFindingQuery Query(Enemy, *NavData, Start, Candidate);
+                    Query.SetAllowPartialPaths(false);
+                    ReachablePolygons.Add(Projected.NodeRef, Nav->TestPathSync(Query));
+                }
+                if (!ReachablePolygons[Projected.NodeRef]) continue;
+            }
             FVector Position = Candidate + FVector(0.f, 0.f, HalfHeight);
             // Recast's voxel height is not the floor height used by CharacterMovement.
             // Validate melee reach at the standing capsule's actual height, not

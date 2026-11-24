@@ -8,7 +8,10 @@
 #include "Blueprint/UserWidget.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/Button.h"
-#include "Components/TextBlock.h"
+#include "Components/ButtonSlot.h"
+#include "Components/Image.h"
+#include "Engine/Texture2D.h"
+#include "UObject/ConstructorHelpers.h"
 #include "GameFramework/PlayerController.h"
 #include "Kismet/GameplayStatics.h"
 #include "Engine/World.h"
@@ -17,6 +20,8 @@
 UVictoryScreenComponent::UVictoryScreenComponent()
 {
     PrimaryComponentTick.bCanEverTick = false;
+    static ConstructorHelpers::FObjectFinder<UTexture2D> Texture(TEXT("/Game/Assets/UI/NextLevel.NextLevel"));
+    NextLevelTexture = Texture.Object;
 }
 
 void UVictoryScreenComponent::BeginPlay()
@@ -137,6 +142,7 @@ void UVictoryScreenComponent::ShowVictory()
 
     VictoryWidget = NewWidget;
     bVictoryShown = true;
+    VictoryWidget->AddToViewport(100);
 
     if (auto* Button = Cast<UButton>(VictoryWidget->GetWidgetFromName(TEXT("NextLevel"))))
     {
@@ -147,13 +153,35 @@ void UVictoryScreenComponent::ShowVictory()
         {
             Button->SetVisibility(ESlateVisibility::Collapsed);
         }
-        else
+        else if (NextLevelTexture)
         {
-            auto* Label = VictoryWidget->WidgetTree->ConstructWidget<UTextBlock>();
-            Label->SetText(NSLOCTEXT("Victory", "Continue", "Продолжить"));
-            Button->SetContent(Label);
-            UE_LOG(LogTemp, Log, TEXT("[Victory] Continue button label: %s"),
-                *Label->GetText().ToString());
+            VictoryWidget->ForceLayoutPrepass();
+            auto* Menu = Cast<UButton>(VictoryWidget->GetWidgetFromName(TEXT("ToMenu")));
+            const FVector2D Size = Menu ? Menu->GetDesiredSize() : FVector2D(476, 109);
+            Button->SetVisibility(ESlateVisibility::Visible);
+            auto* Image = VictoryWidget->WidgetTree->ConstructWidget<UImage>();
+            FSlateBrush Artwork;
+            Artwork.SetResourceObject(NextLevelTexture);
+            Artwork.SetImageSize(Size);
+            Image->SetBrush(Artwork);
+            Image->SetVisibility(ESlateVisibility::HitTestInvisible);
+            FButtonStyle Style = Button->GetStyle();
+            for (FSlateBrush* Brush : { &Style.Normal, &Style.Hovered, &Style.Pressed })
+            {
+                Brush->SetResourceObject(nullptr);
+                Brush->DrawAs = ESlateBrushDrawType::NoDrawType;
+                Brush->TintColor = FLinearColor::White;
+                Brush->SetImageSize(Size);
+            }
+            Style.NormalPadding = Style.PressedPadding = FMargin(0);
+            if (auto* Slot = Cast<UButtonSlot>(Button->SetContent(Image)))
+            {
+                Slot->SetPadding(FMargin(0));
+                Slot->SetHorizontalAlignment(HAlign_Fill);
+                Slot->SetVerticalAlignment(VAlign_Fill);
+            }
+            Button->SetStyle(Style);
+
         }
     }
     if (auto* Button = Cast<UButton>(VictoryWidget->GetWidgetFromName(TEXT("ToMenu"))))
@@ -161,8 +189,6 @@ void UVictoryScreenComponent::ShowVictory()
         Button->OnClicked.Clear();
         Button->OnClicked.AddDynamic(this, &UVictoryScreenComponent::LoadMainMenu);
     }
-
-    VictoryWidget->AddToViewport(100);
 
     FInputModeUIOnly InputMode;
 

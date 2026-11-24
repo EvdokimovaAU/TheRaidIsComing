@@ -279,7 +279,13 @@ void ASearchlight::PositionCapitolBeam()
         if (Building->BuildingType == ERICBuildingType::Capitol && Building->BuildingMesh)
         {
             const FBoxSphereBounds Bounds = Building->BuildingMesh->Bounds;
-            SpotLight->SetWorldLocation(Bounds.Origin + FVector(0, 0, Bounds.BoxExtent.Z + 320.0f));
+            constexpr double RoofClearance = 320.0;
+            SpotLight->SetWorldLocation(Bounds.Origin + FVector(0, 0, Bounds.BoxExtent.Z + RoofClearance));
+            CapitolMinPitch = -FMath::RadiansToDegrees(FMath::Atan2(
+                RoofClearance, FMath::Max(1.0, Bounds.BoxExtent.Size2D())));
+            FRotator Rotation = SpotLight->GetComponentRotation();
+            Rotation.Pitch = FMath::Clamp<double>(Rotation.Pitch, CapitolMinPitch, 0.0);
+            SpotLight->SetWorldRotation(Rotation);
             return;
         }
     }
@@ -361,6 +367,8 @@ void ASearchlight::Tick(float DeltaSeconds)
     }
     if (bUseCapitolSearchlight)
     {
+        TargetRotation.Pitch = FMath::Clamp<double>(TargetRotation.Pitch, CapitolMinPitch, 0.0);
+        if (Direction.SizeSquared2D() <= 1.0) TargetRotation.Yaw = CurrentRotation.Yaw;
         SpotLight->SetWorldRotation(FMath::RInterpTo(CurrentRotation, TargetRotation, DeltaSeconds, 18.0f));
         return;
     }

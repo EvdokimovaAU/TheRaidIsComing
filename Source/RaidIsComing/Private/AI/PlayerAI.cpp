@@ -1,5 +1,6 @@
 #include "AI/PlayerAI.h"
 #include "AI/EnemyAI.h"
+#include "AI/EnemyTorchbearerAI.h"
 
 #include "Engine/World.h"
 #include "Engine/OverlapResult.h"
@@ -112,4 +113,25 @@ void APlayerAI::OnTargetDied()
     Target = nullptr;
 
     FindTarget();
+}
+
+void APlayerAI::FindTowerTarget(bool bTowerCanFireAtAllEnemies)
+{
+    if (bTowerCanFireAtAllEnemies)
+    {
+        FindTarget();
+        return;
+    }
+
+    TArray<AEnemyAI*> Enemies = FindEnemiesInRadius();
+    Enemies.RemoveAll([](const AEnemyAI* Enemy)
+    {
+        return !Enemy->IsA<AEnemyTorchbearerAI>();
+    });
+    Target = SelectTarget(Enemies);
+}
+
+bool APlayerAI::IsTargetTorchbearer() const
+{
+    return IsValid(Target.Get()) && Target->IsA<AEnemyTorchbearerAI>();
 }

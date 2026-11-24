@@ -156,13 +156,7 @@ void AMageTowerAI::UpdateTower()
         return;
     }
 
-    if (!CanFireUnderLighting())
-    {
-        Target = nullptr;
-        return;
-    }
-
-    FindTarget();
+    FindTowerTarget(CanFireUnderLighting());
 
     UWorld* World = GetWorld();
 
@@ -202,7 +196,7 @@ void AMageTowerAI::Attack()
         return;
     }
 
-    if (!CanFireUnderLighting() || !CanAttack())
+    if (!CanAttack() || (!IsTargetTorchbearer() && !CanFireUnderLighting()))
     {
         return;
     }

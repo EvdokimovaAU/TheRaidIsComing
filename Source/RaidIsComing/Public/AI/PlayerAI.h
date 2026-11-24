@@ -37,6 +37,9 @@ public:
     void OnTargetDied();
 
 protected:
+    void FindTowerTarget(bool bTowerCanFireAtAllEnemies);
+    bool IsTargetTorchbearer() const;
+
 
     virtual void BeginPlay() override;
 };

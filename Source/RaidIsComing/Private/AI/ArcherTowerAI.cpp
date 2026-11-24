@@ -153,13 +153,7 @@ void AArcherTowerAI::UpdateTower()
         return;
     }
 
-    if (!CanFireUnderLighting())
-    {
-        Target = nullptr;
-        return;
-    }
-
-    FindTarget();
+    FindTowerTarget(CanFireUnderLighting());
 
     UWorld* World = GetWorld();
 
@@ -199,7 +193,7 @@ void AArcherTowerAI::Attack()
         return;
     }
 
-    if (!CanFireUnderLighting() || !CanAttack())
+    if (!CanAttack() || (!IsTargetTorchbearer() && !CanFireUnderLighting()))
     {
         return;
     }

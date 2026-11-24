@@ -5,6 +5,7 @@
 #include "AI/GameBalanceManager.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/BoxComponent.h"
+#include "Kismet/GameplayStatics.h"
 #include "NavAreas/NavArea_Null.h"
 
 ARICBuilding::ARICBuilding()
@@ -97,6 +98,14 @@ void ARICBuilding::BeginPlay()
             MaxHP = 100.0f;
         }
 
+        if (BuildingType == ERICBuildingType::Barrier)
+        {
+            const FString Level = UGameplayStatics::GetCurrentLevelName(this);
+            if (Level == TEXT("Level_2") || Level == TEXT("Level_3"))
+            {
+                MaxHP *= 2.f;
+            }
+        }
         CurrentHP = MaxHP;
     }
     else

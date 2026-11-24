@@ -92,6 +92,7 @@ protected:
     virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 private:
+    float CapitolMinPitch = -45.f;
     bool bHasAimLocation = false;
     FVector AimLocation = FVector::ZeroVector;
     TWeakObjectPtr<APlayerController> InputPlayerController;

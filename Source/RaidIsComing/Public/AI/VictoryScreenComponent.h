@@ -5,6 +5,7 @@
 #include "Components/ActorComponent.h"
 #include "VictoryScreenComponent.generated.h"
 
+class UTexture2D;
 class UUserWidget;
 class ARICBuilding;
 class AWaveManager;
@@ -56,6 +57,9 @@ protected:
     FName MainMenuLevelName = NAME_None;
 
 private:
+    UPROPERTY()
+    TObjectPtr<UTexture2D> NextLevelTexture;
+
     UPROPERTY()
     TObjectPtr<UUserWidget> VictoryWidget = nullptr;
 
